@@ -43,16 +43,6 @@ class ProfileResponse(BaseModel):
     recent_rounds: list
 
 
-class StatsResponse(BaseModel):
-    total_rounds: int
-    wins: int
-    losses: int
-    draws: int
-    win_rate: float
-    favorite_move: str
-    streak: int
-
-
 class CreateRoomResponse(BaseModel):
     room_code: str
     player_a_id: int
@@ -115,6 +105,14 @@ class MatchmakingStatusResponse(BaseModel):
 class TournamentCreateRequest(BaseModel):
     name: str
     max_players: int = 4
+
+
+class TournamentListItem(BaseModel):
+    code: str
+    name: str
+    status: str
+    player_count: int
+    max_players: int
 
 
 class TournamentCreateResponse(BaseModel):

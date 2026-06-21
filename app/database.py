@@ -184,6 +184,13 @@ class Database:
         self.conn.commit()
         return token
 
+    def delete_session(self, token: str) -> None:
+        if token:
+            self.conn.execute(
+                "DELETE FROM sessions WHERE token = ?", (token,),
+            )
+            self.conn.commit()
+
     def get_session_user_id(self, token: str) -> Optional[int]:
         if not token:
             return None
@@ -517,6 +524,18 @@ class Database:
             except sqlite3.IntegrityError:
                 continue
         raise RuntimeError("Failed to generate unique tournament code")
+
+    def list_open_tournaments(self) -> list[dict]:
+        rows = self.conn.execute("""
+            SELECT t.code, t.name, t.status, t.max_players,
+                   (SELECT COUNT(*) FROM tournament_players tp
+                    WHERE tp.tournament_id = t.id) AS player_count
+            FROM tournaments t
+            WHERE t.status = 'waiting'
+            ORDER BY t.id DESC
+            LIMIT 20
+        """).fetchall()
+        return [dict(r) for r in rows]
 
     def get_tournament(self, code: str) -> Optional[dict]:
         row = self.conn.execute("""

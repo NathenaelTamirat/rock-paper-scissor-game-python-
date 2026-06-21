@@ -32,6 +32,7 @@ from app.schemas import (
     TournamentCreateRequest,
     TournamentCreateResponse,
     TournamentJoinResponse,
+    TournamentListItem,
     TournamentStateResponse,
 )
 
@@ -167,6 +168,14 @@ def login(req: LoginRequest):
         )
     token = db.create_session(user["id"])
     return LoginResponse(user_id=user["id"], token=token)
+
+
+@app.post("/logout")
+def logout(authorization: str = Header(default="")):
+    if authorization.startswith("Bearer "):
+        token = authorization[len("Bearer "):].strip()
+        db.delete_session(token)
+    return {"status": "ok"}
 
 
 @app.get("/profile/{user_id}", response_model=ProfileResponse)
@@ -353,6 +362,11 @@ def matchmaking_leave(authorization: str = Header(default="")):
         raise HTTPException(status_code=401, detail="Authentication required.")
     db.leave_queue(user_id)
     return MatchmakingLeaveResponse(status="ok")
+
+
+@app.get("/tournaments")
+def list_tournaments():
+    return {"tournaments": db.list_open_tournaments()}
 
 
 @app.post("/tournaments", response_model=TournamentCreateResponse)

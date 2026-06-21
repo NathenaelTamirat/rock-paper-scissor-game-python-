@@ -361,7 +361,12 @@ async function login() {
   }
 }
 
-function logout() {
+async function logout() {
+  try {
+    await api("POST", "/logout");
+  } catch {
+    // server-side token invalidation is best-effort
+  }
   authToken = "";
   authUser = "";
   authUserId = 0;
@@ -491,6 +496,32 @@ function renderTournament(data) {
   }
 }
 
+async function loadTournamentList() {
+  try {
+    const data = await api("GET", "/tournaments");
+    const list = data.tournaments || [];
+    const el = document.getElementById("t-list");
+    const items = document.getElementById("t-list-items");
+    if (list.length === 0) {
+      el.classList.add("hidden");
+      return;
+    }
+    el.classList.remove("hidden");
+    items.innerHTML = list.map(function(t) {
+      return "<li><a href='#' onclick='event.preventDefault();joinByCode(\"" + t.code + "\")'>" +
+        t.name + " (" + t.player_count + "/" + t.max_players + ")" +
+        "</a></li>";
+    }).join("");
+  } catch {
+    document.getElementById("t-list").classList.add("hidden");
+  }
+}
+
+function joinByCode(code) {
+  document.getElementById("t-code-input").value = code;
+  joinTournament();
+}
+
 var CHART_COLORS = ["#4e79a7", "#f28e2b", "#e15759"];
 
 async function loadAnalytics() {
@@ -577,3 +608,4 @@ loadHistory();
 loadStats();
 loadLeaderboard();
 loadAnalytics();
+loadTournamentList();

@@ -952,3 +952,39 @@ class TestAnalytics:
         assert "day" in entry
         assert "games" in entry
         assert entry["games"] >= 1
+
+
+class TestHousekeeping:
+    def setup_method(self):
+        memory.reset()
+        r = client.post("/register", json={
+            "username": "hk_user", "password": "test1234",
+        })
+        self.token = r.json().get("token") if r.status_code == 200 else None
+        if not self.token:
+            r = client.post("/login", json={
+                "username": "hk_user", "password": "test1234",
+            })
+            self.token = r.json()["token"]
+
+    def _auth_header(self):
+        return {"Authorization": f"Bearer {self.token}"}
+
+    def test_logout_returns_ok(self):
+        resp = client.post("/logout", headers=self._auth_header())
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok"}
+
+    def test_tournament_listing(self):
+        # Create a tourney
+        client.post("/tournaments", json={"name": "ListTest", "max_players": 4},
+                     headers=self._auth_header())
+        resp = client.get("/tournaments")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "tournaments" in data
+        assert len(data["tournaments"]) >= 1
+        t = data["tournaments"][0]
+        assert "code" in t
+        assert "name" in t
+        assert "status" in t
