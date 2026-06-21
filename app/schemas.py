@@ -22,6 +22,24 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegisterResponse(BaseModel):
+    user_id: int
+    username: str
+
+
+class LoginResponse(BaseModel):
+    user_id: int
+    token: str
+
+
+class ProfileResponse(BaseModel):
+    user_id: int
+    username: str
+    created_at: str
+    stats: dict
+    recent_rounds: list
+
+
 class StatsResponse(BaseModel):
     total_rounds: int
     wins: int

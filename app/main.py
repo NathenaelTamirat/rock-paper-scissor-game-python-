@@ -1,12 +1,24 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 
+from typing import Optional
+
 from app.bot import random_bot_move
+from app.database import Database
 from app.memory import GameMemory
 from app.rules import MOVES, get_winner, validate_move
-from app.schemas import PlayRequest, PlayResponse
+from app.schemas import (
+    LoginRequest,
+    LoginResponse,
+    PlayRequest,
+    PlayResponse,
+    ProfileResponse,
+    RegisterRequest,
+    RegisterResponse,
+)
 
 memory = GameMemory()
+db = Database()
 app = FastAPI(title="Rock Paper Scissors API")
 
 app.add_middleware(
@@ -33,13 +45,23 @@ def play_round(player_move: str) -> dict:
     }
 
 
+def _resolve_user(authorization: str = "") -> Optional[int]:
+    if not authorization.startswith("Bearer "):
+        return None
+    token = authorization[len("Bearer "):].strip()
+    return db.get_session_user_id(token)
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 
 @app.post("/play", response_model=PlayResponse)
-def play(req: PlayRequest):
+def play(
+    req: PlayRequest,
+    authorization: str = Header(default=""),
+):
     result = play_round(req.player_move)
 
     if "error" in result:
@@ -50,6 +72,15 @@ def play(req: PlayRequest):
         result["bot_move"],
         result["winner"],
     )
+
+    user_id = _resolve_user(authorization)
+    if user_id is not None:
+        db.record_round(
+            user_id,
+            result["player_move"],
+            result["bot_move"],
+            result["winner"],
+        )
 
     return PlayResponse(
         player_move=result["player_move"],
@@ -76,6 +107,59 @@ def history():
 def reset():
     memory.reset()
     return {"status": "ok"}
+
+
+@app.post("/register", response_model=RegisterResponse)
+def register(req: RegisterRequest):
+    username = req.username.strip()
+    if not username or len(username) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Username must be at least 2 characters.",
+        )
+    if len(req.password) < 4:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 4 characters.",
+        )
+
+    user_id = db.create_user(username, req.password)
+    if user_id == -1:
+        raise HTTPException(
+            status_code=409,
+            detail="Username already taken.",
+        )
+    return RegisterResponse(user_id=user_id, username=username)
+
+
+@app.post("/login", response_model=LoginResponse)
+def login(req: LoginRequest):
+    user = db.verify_login(req.username.strip(), req.password)
+    if user is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid username or password.",
+        )
+    token = db.create_session(user["id"])
+    return LoginResponse(user_id=user["id"], token=token)
+
+
+@app.get("/profile/{user_id}", response_model=ProfileResponse)
+def profile(user_id: int):
+    user = db.get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    stats = db.get_user_stats(user_id) or {}
+    recent = db.get_user_rounds(user_id, limit=10)
+
+    return ProfileResponse(
+        user_id=user["id"],
+        username=user["username"],
+        created_at=user["created_at"],
+        stats=stats,
+        recent_rounds=recent,
+    )
 
 
 def main() -> None:

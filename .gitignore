@@ -23,6 +23,8 @@ Thumbs.db
 # Environment
 .env
 *.db
+*.db-shm
+*.db-wal
 
 implementation.md
 
