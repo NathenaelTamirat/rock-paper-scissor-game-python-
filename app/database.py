@@ -67,6 +67,37 @@ class Database:
                 preferred_mode TEXT DEFAULT 'classic',
                 enqueued_at TEXT DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS tournaments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                max_players INTEGER DEFAULT 4,
+                status TEXT DEFAULT 'waiting',
+                winner_id INTEGER REFERENCES users(id),
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS tournament_players (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tournament_id INTEGER NOT NULL REFERENCES tournaments(id),
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                seed INTEGER,
+                UNIQUE(tournament_id, user_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS tournament_matches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tournament_id INTEGER NOT NULL REFERENCES tournaments(id),
+                round INTEGER NOT NULL,
+                match_index INTEGER NOT NULL,
+                player_a_id INTEGER REFERENCES users(id),
+                player_b_id INTEGER REFERENCES users(id),
+                score_a INTEGER DEFAULT 0,
+                score_b INTEGER DEFAULT 0,
+                winner_id INTEGER REFERENCES users(id),
+                status TEXT DEFAULT 'pending'
+            );
         """)
         self.conn.commit()
         # Migration: add streak column if missing on existing databases
@@ -418,3 +449,184 @@ class Database:
         self.conn.commit()
 
         return room["room_code"]
+
+    # --- Tournaments ---
+
+    @staticmethod
+    def _generate_tournament_code() -> str:
+        return ''.join(
+            secrets.choice(string.ascii_uppercase + string.digits)
+            for _ in range(6)
+        )
+
+    def create_tournament(self, name: str, user_id: int, max_players: int = 4) -> dict:
+        for _ in range(10):
+            code = self._generate_tournament_code()
+            try:
+                cur = self.conn.execute(
+                    "INSERT INTO tournaments (code, name, max_players, status) "
+                    "VALUES (?, ?, ?, 'waiting')",
+                    (code, name, max_players),
+                )
+                tid = cur.lastrowid
+                self.conn.execute(
+                    "INSERT INTO tournament_players (tournament_id, user_id, seed) "
+                    "VALUES (?, ?, 1)",
+                    (tid, user_id),
+                )
+                self.conn.commit()
+                return self.get_tournament(code)
+            except sqlite3.IntegrityError:
+                continue
+        raise RuntimeError("Failed to generate unique tournament code")
+
+    def get_tournament(self, code: str) -> Optional[dict]:
+        row = self.conn.execute("""
+            SELECT t.*, u.username AS winner_username
+            FROM tournaments t
+            LEFT JOIN users u ON u.id = t.winner_id
+            WHERE t.code = ?
+        """, (code,)).fetchone()
+        if row is None:
+            return None
+        t = dict(row)
+
+        players = self.conn.execute("""
+            SELECT tp.seed, tp.user_id, u.username
+            FROM tournament_players tp
+            JOIN users u ON u.id = tp.user_id
+            WHERE tp.tournament_id = ?
+            ORDER BY tp.seed ASC
+        """, (t["id"],)).fetchall()
+        t["players"] = [dict(p) for p in players]
+
+        matches = self.conn.execute("""
+            SELECT tm.round, tm.match_index,
+                   tm.player_a_id, a.username AS player_a_username,
+                   tm.player_b_id, b.username AS player_b_username,
+                   tm.score_a, tm.score_b, tm.winner_id, tm.status,
+                   w.username AS winner_username
+            FROM tournament_matches tm
+            LEFT JOIN users a ON a.id = tm.player_a_id
+            LEFT JOIN users b ON b.id = tm.player_b_id
+            LEFT JOIN users w ON w.id = tm.winner_id
+            WHERE tm.tournament_id = ?
+            ORDER BY tm.round ASC, tm.match_index ASC
+        """, (t["id"],)).fetchall()
+        t["matches"] = [dict(m) for m in matches]
+
+        return t
+
+    def join_tournament(self, code: str, user_id: int) -> dict:
+        t = self.get_tournament(code)
+        if t is None:
+            raise ValueError("Tournament not found")
+        if t["status"] != "waiting":
+            raise ValueError("Tournament is not accepting players")
+
+        existing = self.conn.execute(
+            "SELECT 1 FROM tournament_players "
+            "WHERE tournament_id = ? AND user_id = ?",
+            (t["id"], user_id),
+        ).fetchone()
+        if existing is not None:
+            return t
+
+        count = self.conn.execute(
+            "SELECT COUNT(*) AS cnt FROM tournament_players "
+            "WHERE tournament_id = ?",
+            (t["id"],),
+        ).fetchone()["cnt"]
+        if count >= t["max_players"]:
+            raise ValueError("Tournament is full")
+
+        next_seed = count + 1
+        self.conn.execute(
+            "INSERT INTO tournament_players (tournament_id, user_id, seed) "
+            "VALUES (?, ?, ?)",
+            (t["id"], user_id, next_seed),
+        )
+        self.conn.commit()
+        return self.get_tournament(code)
+
+    def _simulate_best_of_three(
+        self, player_a_id: int, player_b_id: int,
+    ) -> tuple:
+        import random
+        from app.rules import MOVES, get_winner
+        score_a, score_b = 0, 0
+        for _ in range(3):
+            if score_a == 2 or score_b == 2:
+                break
+            move_a = random.choice(MOVES)
+            move_b = random.choice(MOVES)
+            result = get_winner(move_a, move_b)
+            if result == "player":
+                score_a += 1
+            elif result == "bot":
+                score_b += 1
+        winner_id = player_a_id if score_a > score_b else player_b_id
+        return score_a, score_b, winner_id
+
+    def run_tournament(self, code: str) -> dict:
+        t = self.get_tournament(code)
+        if t is None:
+            raise ValueError("Tournament not found")
+        if t["status"] != "waiting":
+            raise ValueError("Tournament already started")
+
+        players = t["players"]
+        if len(players) < 4:
+            raise ValueError(
+                f"Need 4 players, got {len(players)}"
+            )
+
+        self.conn.execute(
+            "UPDATE tournaments SET status = 'active' WHERE id = ?",
+            (t["id"],),
+        )
+        self.conn.commit()
+
+        seeded = sorted(players, key=lambda p: p["seed"])
+
+        # Semifinals: seed 1 vs seed 4, seed 2 vs seed 3
+        semis = [
+            (seeded[0], seeded[3]),
+            (seeded[1], seeded[2]),
+        ]
+
+        finalists = []
+        for idx, (p_a, p_b) in enumerate(semis):
+            score_a, score_b, winner_id = self._simulate_best_of_three(
+                p_a["user_id"], p_b["user_id"],
+            )
+            self.conn.execute(
+                "INSERT INTO tournament_matches "
+                "(tournament_id, round, match_index, player_a_id, player_b_id, "
+                " score_a, score_b, winner_id, status) "
+                "VALUES (?, 1, ?, ?, ?, ?, ?, ?, 'complete')",
+                (t["id"], idx, p_a["user_id"], p_b["user_id"],
+                 score_a, score_b, winner_id),
+            )
+            finalists.append(winner_id)
+
+        # Final
+        score_a, score_b, champion_id = self._simulate_best_of_three(
+            finalists[0], finalists[1],
+        )
+        self.conn.execute(
+            "INSERT INTO tournament_matches "
+            "(tournament_id, round, match_index, player_a_id, player_b_id, "
+            " score_a, score_b, winner_id, status) "
+            "VALUES (?, 2, 0, ?, ?, ?, ?, ?, 'complete')",
+            (t["id"], finalists[0], finalists[1],
+             score_a, score_b, champion_id),
+        )
+
+        self.conn.execute(
+            "UPDATE tournaments SET status = 'complete', winner_id = ? WHERE id = ?",
+            (champion_id, t["id"]),
+        )
+        self.conn.commit()
+
+        return self.get_tournament(code)

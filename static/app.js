@@ -381,6 +381,109 @@ async function resetGame() {
   }
 }
 
+let currentTournament = null;
+
+function showTLobby() {
+  document.getElementById("t-lobby").classList.remove("hidden");
+  document.getElementById("t-view").classList.add("hidden");
+}
+
+function showTView() {
+  document.getElementById("t-lobby").classList.add("hidden");
+  document.getElementById("t-view").classList.remove("hidden");
+}
+
+async function createTournament() {
+  if (!authToken) return alert("You must be logged in.");
+  const name = document.getElementById("t-name-input").value.trim();
+  if (!name) return alert("Enter a tournament name.");
+  try {
+    const data = await api("POST", "/tournaments", { name, max_players: 4 });
+    currentTournament = data.code;
+    document.getElementById("t-name-display").textContent = data.name;
+    document.getElementById("t-code-display").textContent = data.code;
+    showTView();
+    renderTournament(data);
+  } catch (err) {
+    alert("Failed to create tournament: " + err.message);
+  }
+}
+
+async function joinTournament() {
+  if (!authToken) return alert("You must be logged in.");
+  const code = document.getElementById("t-code-input").value.trim().toUpperCase();
+  if (!code) return alert("Enter a tournament code.");
+  try {
+    const data = await api("POST", "/tournaments/" + code + "/join");
+    currentTournament = data.code;
+    document.getElementById("t-name-display").textContent = data.name;
+    document.getElementById("t-code-display").textContent = data.code;
+    showTView();
+    renderTournament(data);
+  } catch (err) {
+    alert("Failed to join tournament: " + err.message);
+  }
+}
+
+async function runTournament() {
+  if (!currentTournament) return;
+  try {
+    const data = await api("POST", "/tournaments/" + currentTournament + "/run");
+    renderTournament(data);
+  } catch (err) {
+    alert("Failed to run tournament: " + err.message);
+  }
+}
+
+async function loadTournament() {
+  if (!currentTournament) return;
+  try {
+    const data = await api("GET", "/tournaments/" + currentTournament);
+    renderTournament(data);
+  } catch {
+    currentTournament = null;
+    showTLobby();
+  }
+}
+
+function renderTournament(data) {
+  document.getElementById("t-players").textContent =
+    data.players.map(function(p) { return p.username; }).join(", ") || "(none)";
+
+  const sEl = document.getElementById("t-status-text");
+  if (data.status === "waiting") sEl.textContent = "Waiting for players...";
+  else if (data.status === "active") sEl.textContent = "In progress";
+  else sEl.textContent = "Complete";
+
+  document.getElementById("t-run-btn").classList.toggle("hidden", data.status !== "waiting");
+
+  const bracketEl = document.getElementById("t-bracket");
+  const matchesEl = document.getElementById("t-matches");
+  const winnerEl = document.getElementById("t-winner");
+
+  if (data.matches && data.matches.length > 0) {
+    bracketEl.classList.remove("hidden");
+    matchesEl.innerHTML = data.matches.map(function(m) {
+      var pA = m.player_a_username || "TBD";
+      var pB = m.player_b_username || "TBD";
+      var score = m.status === "complete"
+        ? "[" + m.score_a + " - " + m.score_b + "]"
+        : "";
+      var w = m.winner_username ? " Winner: " + m.winner_username : "";
+      var r = m.round === 1 ? "Semifinal" : "Final";
+      return "<div class='match-card'>" +
+        "<strong>" + r + " " + (m.match_index + 1) + "</strong>: " +
+        pA + " vs " + pB + " " + score + w +
+        "</div>";
+    }).join("");
+
+    if (data.winner_username) {
+      winnerEl.classList.remove("hidden");
+      winnerEl.innerHTML = "<strong>Champion: " + data.winner_username + "</strong>";
+    }
+  }
+}
+
 loadHistory();
 loadStats();
 loadLeaderboard();

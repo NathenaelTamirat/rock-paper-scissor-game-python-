@@ -106,6 +106,31 @@
     <button onclick="resetGame()" class="reset-btn">Reset Game</button>
   </section>
 
+  <section id="tournament-section" class="card">
+    <h2>Tournament</h2>
+    <div id="t-lobby">
+      <div class="join-row">
+        <input type="text" id="t-name-input" placeholder="Tournament name" maxlength="30">
+        <button onclick="createTournament()" class="btn">Create Tournament</button>
+      </div>
+      <div class="join-row">
+        <input type="text" id="t-code-input" placeholder="Tournament code" maxlength="6">
+        <button onclick="joinTournament()" class="btn">Join Tournament</button>
+      </div>
+    </div>
+    <div id="t-view" class="hidden">
+      <p>Tournament: <strong id="t-name-display"></strong> (<span id="t-code-display"></span>)</p>
+      <p>Players: <span id="t-players"></span></p>
+      <p>Status: <span id="t-status-text"></span></p>
+      <button id="t-run-btn" onclick="runTournament()" class="btn">Start Tournament</button>
+      <div id="t-bracket" class="hidden">
+        <h3>Bracket</h3>
+        <div id="t-matches"></div>
+        <p id="t-winner" class="hidden"></p>
+      </div>
+    </div>
+  </section>
+
   <section id="leaderboard-section" class="card hidden">
     <h2>Leaderboard</h2>
     <table id="leaderboard-table">

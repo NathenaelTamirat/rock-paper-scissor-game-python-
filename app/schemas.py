@@ -109,3 +109,46 @@ class MatchmakingStatusResponse(BaseModel):
     status: str
     position: Optional[int] = None
     room_code: Optional[str] = None
+
+
+class TournamentCreateRequest(BaseModel):
+    name: str
+    max_players: int = 4
+
+
+class TournamentCreateResponse(BaseModel):
+    code: str
+    name: str
+    status: str
+    players: list
+
+
+class TournamentJoinResponse(BaseModel):
+    code: str
+    name: str
+    status: str
+    players: list
+
+
+class TournamentMatchInfo(BaseModel):
+    round: int
+    match_index: int
+    player_a_id: Optional[int] = None
+    player_a_username: Optional[str] = None
+    player_b_id: Optional[int] = None
+    player_b_username: Optional[str] = None
+    score_a: int
+    score_b: int
+    winner_id: Optional[int] = None
+    winner_username: Optional[str] = None
+    status: str
+
+
+class TournamentStateResponse(BaseModel):
+    code: str
+    name: str
+    status: str
+    players: list
+    matches: list
+    winner_id: Optional[int] = None
+    winner_username: Optional[str] = None

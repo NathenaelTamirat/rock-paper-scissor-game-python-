@@ -25,6 +25,10 @@ from app.schemas import (
     RoomPlayRequest,
     RoomPlayResponse,
     RoomStateResponse,
+    TournamentCreateRequest,
+    TournamentCreateResponse,
+    TournamentJoinResponse,
+    TournamentStateResponse,
 )
 
 memory = GameMemory()
@@ -299,6 +303,74 @@ def matchmaking_leave(authorization: str = Header(default="")):
         raise HTTPException(status_code=401, detail="Authentication required.")
     db.leave_queue(user_id)
     return MatchmakingLeaveResponse(status="ok")
+
+
+@app.post("/tournaments", response_model=TournamentCreateResponse)
+def create_tournament(
+    req: TournamentCreateRequest,
+    authorization: str = Header(default=""),
+):
+    user_id = _resolve_user(authorization)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    t = db.create_tournament(req.name, user_id, req.max_players)
+    return TournamentCreateResponse(
+        code=t["code"], name=t["name"], status=t["status"],
+        players=t["players"],
+    )
+
+
+@app.post("/tournaments/{code}/join", response_model=TournamentJoinResponse)
+def join_tournament(
+    code: str,
+    authorization: str = Header(default=""),
+):
+    user_id = _resolve_user(authorization)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    try:
+        t = db.join_tournament(code.upper(), user_id)
+    except ValueError as e:
+        msg = str(e)
+        status_code = 404 if msg == "Tournament not found" else 400
+        raise HTTPException(status_code=status_code, detail=msg)
+    return TournamentJoinResponse(
+        code=t["code"], name=t["name"], status=t["status"],
+        players=t["players"],
+    )
+
+
+@app.post("/tournaments/{code}/run", response_model=TournamentStateResponse)
+def run_tournament(
+    code: str,
+    authorization: str = Header(default=""),
+):
+    user_id = _resolve_user(authorization)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    try:
+        t = db.run_tournament(code.upper())
+    except ValueError as e:
+        msg = str(e)
+        status_code = 404 if msg == "Tournament not found" else 400
+        raise HTTPException(status_code=status_code, detail=msg)
+    return TournamentStateResponse(
+        code=t["code"], name=t["name"], status=t["status"],
+        players=t["players"], matches=t["matches"],
+        winner_id=t["winner_id"], winner_username=t["winner_username"],
+    )
+
+
+@app.get("/tournaments/{code}", response_model=TournamentStateResponse)
+def tournament_state(code: str):
+    t = db.get_tournament(code.upper())
+    if t is None:
+        raise HTTPException(status_code=404, detail="Tournament not found.")
+    return TournamentStateResponse(
+        code=t["code"], name=t["name"], status=t["status"],
+        players=t["players"], matches=t["matches"],
+        winner_id=t["winner_id"], winner_username=t["winner_username"],
+    )
 
 
 @app.get("/matchmaking/status/{user_id}", response_model=MatchmakingStatusResponse)

@@ -678,3 +678,198 @@ class TestMatchmaking:
         s_a2 = client.get(f"/matchmaking/status/{uid_a}",
                           headers=self._auth_header(token_a)).json()
         assert s_a2["status"] == "matched"
+
+
+class TestTournament:
+    USER_NAMES = ["t_alice", "t_bob", "t_charlie", "t_diana"]
+    PASSWORD = "pass1234"
+
+    def setup_method(self):
+        # Wipe all tournament data first (FK-safe order)
+        db.conn.execute("DELETE FROM tournament_matches")
+        db.conn.execute("DELETE FROM tournament_players")
+        db.conn.execute("DELETE FROM tournaments")
+
+        for uname in self.USER_NAMES:
+            existing = db.get_user_by_username(uname)
+            if existing:
+                uid = existing["id"]
+                db.conn.execute("DELETE FROM sessions WHERE user_id = ?", (uid,))
+                db.conn.execute("DELETE FROM rounds WHERE user_id = ?", (uid,))
+                db.conn.execute("DELETE FROM stats WHERE user_id = ?", (uid,))
+                db.conn.execute("DELETE FROM rooms WHERE player_a_id = ? OR player_b_id = ?",
+                                (uid, uid))
+                db.conn.execute("DELETE FROM matchmaking_queue WHERE user_id = ?", (uid,))
+                db.conn.execute("DELETE FROM users WHERE id = ?", (uid,))
+        db.conn.commit()
+
+    def _register(self, username):
+        r = client.post("/register", json={
+            "username": username, "password": self.PASSWORD,
+        })
+        assert r.status_code == 200
+        return r.json()
+
+    def _login(self, username):
+        r = client.post("/login", json={
+            "username": username, "password": self.PASSWORD,
+        })
+        assert r.status_code == 200
+        return r.json()
+
+    def _auth_header(self, token):
+        return {"Authorization": f"Bearer {token}"}
+
+    def _join_all(self):
+        """Register and login all 4 users, return tokens and user_ids."""
+        users = {}
+        for name in self.USER_NAMES:
+            u = self._register(name)
+            tok = self._login(name)["token"]
+            users[name] = {"id": u["user_id"], "token": tok}
+        return users
+
+    def test_create_requires_auth(self):
+        response = client.post("/tournaments", json={"name": "Test"})
+        assert response.status_code == 401
+
+    def test_create_tournament(self):
+        users = self._join_all()
+        tok = users[self.USER_NAMES[0]]["token"]
+        response = client.post("/tournaments", json={"name": "MyTourney"},
+                               headers=self._auth_header(tok))
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["code"]) == 6
+        assert data["name"] == "MyTourney"
+        assert data["status"] == "waiting"
+        assert len(data["players"]) == 1
+
+    def test_join_tournament(self):
+        users = self._join_all()
+        tok_a = users[self.USER_NAMES[0]]["token"]
+        tok_b = users[self.USER_NAMES[1]]["token"]
+
+        create = client.post("/tournaments", json={"name": "T"},
+                             headers=self._auth_header(tok_a))
+        code = create.json()["code"]
+
+        join = client.post(f"/tournaments/{code}/join",
+                           headers=self._auth_header(tok_b))
+        assert join.status_code == 200
+        assert len(join.json()["players"]) == 2
+
+    def test_join_nonexistent(self):
+        users = self._join_all()
+        tok = users[self.USER_NAMES[0]]["token"]
+        response = client.post("/tournaments/NOTFND/join",
+                               headers=self._auth_header(tok))
+        assert response.status_code == 404
+
+    def test_join_full(self):
+        users = self._join_all()
+        tok_a = users[self.USER_NAMES[0]]["token"]
+        create = client.post("/tournaments",
+                             json={"name": "T", "max_players": 1},
+                             headers=self._auth_header(tok_a))
+        code = create.json()["code"]
+
+        tok_b = users[self.USER_NAMES[1]]["token"]
+        response = client.post(f"/tournaments/{code}/join",
+                               headers=self._auth_header(tok_b))
+        assert response.status_code == 400
+
+    def test_run_requires_4_players(self):
+        users = self._join_all()
+        tok = users[self.USER_NAMES[0]]["token"]
+        create = client.post("/tournaments", json={"name": "T"},
+                             headers=self._auth_header(tok))
+        code = create.json()["code"]
+
+        response = client.post(f"/tournaments/{code}/run",
+                               headers=self._auth_header(tok))
+        assert response.status_code == 400
+        assert "4" in response.text or "Need" in response.text
+
+    def test_run_tournament_bracket(self):
+        users = self._join_all()
+        tokens = {name: users[name]["token"] for name in self.USER_NAMES}
+
+        # Create
+        create = client.post("/tournaments", json={"name": "Bracket"},
+                             headers=self._auth_header(tokens[self.USER_NAMES[0]]))
+        code = create.json()["code"]
+
+        # Join all 4
+        for name in self.USER_NAMES[1:]:
+            client.post(f"/tournaments/{code}/join",
+                        headers=self._auth_header(tokens[name]))
+
+        # Run
+        run = client.post(f"/tournaments/{code}/run",
+                          headers=self._auth_header(tokens[self.USER_NAMES[0]]))
+        assert run.status_code == 200
+        data = run.json()
+        assert data["status"] == "complete"
+
+        # Check bracket: 2 semifinals + 1 final = 3 matches
+        assert len(data["matches"]) == 3
+        for m in data["matches"]:
+            assert m["status"] == "complete"
+            assert m["winner_id"] is not None
+            assert m["winner_username"] is not None
+            # Best-of-3: scores in 0-2 range, winner has higher score
+            assert 0 <= m["score_a"] <= 2
+            assert 0 <= m["score_b"] <= 2
+            if m["score_a"] > m["score_b"]:
+                assert m["winner_id"] == m["player_a_id"]
+            elif m["score_b"] > m["score_a"]:
+                assert m["winner_id"] == m["player_b_id"]
+
+        # Check champion exists
+        assert data["winner_id"] is not None
+        assert data["winner_username"] is not None
+
+    def test_tournament_winner_is_one_of_players(self):
+        users = self._join_all()
+        tokens = {name: users[name]["token"] for name in self.USER_NAMES}
+        ids = {name: users[name]["id"] for name in self.USER_NAMES}
+
+        create = client.post("/tournaments", json={"name": "W"},
+                             headers=self._auth_header(tokens[self.USER_NAMES[0]]))
+        code = create.json()["code"]
+
+        for name in self.USER_NAMES[1:]:
+            client.post(f"/tournaments/{code}/join",
+                        headers=self._auth_header(tokens[name]))
+
+        run = client.post(f"/tournaments/{code}/run",
+                          headers=self._auth_header(tokens[self.USER_NAMES[0]]))
+        data = run.json()
+
+        # Winner must be one of the 4 players
+        winner_id = data["winner_id"]
+        all_ids = [ids[n] for n in self.USER_NAMES]
+        assert winner_id in all_ids
+
+    def test_tournament_state(self):
+        users = self._join_all()
+        tokens = {name: users[name]["token"] for name in self.USER_NAMES}
+
+        create = client.post("/tournaments", json={"name": "State"},
+                             headers=self._auth_header(tokens[self.USER_NAMES[0]]))
+        code = create.json()["code"]
+
+        for name in self.USER_NAMES[1:]:
+            client.post(f"/tournaments/{code}/join",
+                        headers=self._auth_header(tokens[name]))
+
+        client.post(f"/tournaments/{code}/run",
+                    headers=self._auth_header(tokens[self.USER_NAMES[0]]))
+
+        state = client.get(f"/tournaments/{code}")
+        assert state.status_code == 200
+        data = state.json()
+        assert data["status"] == "complete"
+        assert len(data["matches"]) == 3
+        assert data["winner_id"] is not None
