@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 
 from typing import Optional
 
-from app.bot import random_bot_move
+from app.bot import persona_bot_move
 from app.database import Database
 from app.memory import GameMemory
 from app.rules import MOVES, get_winner, validate_move
@@ -48,13 +48,13 @@ app.add_middleware(
 )
 
 
-def play_round(player_move: str) -> dict:
+def play_round(player_move: str, persona: str = "classic") -> dict:
     normalized = player_move.strip().lower()
 
     if not validate_move(normalized):
         return {"error": f"Invalid move. Choose from {', '.join(MOVES)}."}
 
-    bot_move = random_bot_move()
+    bot_move = persona_bot_move(memory, persona)
     winner = get_winner(normalized, bot_move)
 
     return {
@@ -81,7 +81,7 @@ def play(
     req: PlayRequest,
     authorization: str = Header(default=""),
 ):
-    result = play_round(req.player_move)
+    result = play_round(req.player_move, persona=req.persona)
 
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])

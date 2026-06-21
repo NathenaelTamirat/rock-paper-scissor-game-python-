@@ -1,8 +1,15 @@
 import pytest
 
-from app.bot import random_bot_move
+from app.bot import random_bot_move, persona_bot_move
 from app.main import play_round
+from app.memory import GameMemory
 from app.rules import MOVES
+
+_COUNTER = {
+    "rock": "paper",
+    "paper": "scissors",
+    "scissors": "rock",
+}
 
 
 class TestRandomBotMove:
@@ -63,3 +70,65 @@ class TestPlayRound:
     def test_mixed_case_is_valid(self):
         result = play_round("Rock")
         assert "error" not in result
+
+    def test_valid_with_all_personas(self):
+        for persona in ("classic", "aggressive", "defensive", "random"):
+            result = play_round("rock", persona=persona)
+            assert "error" not in result
+            assert result["bot_move"] in MOVES
+
+
+class TestPersona:
+    def test_persona_bot_move_returns_valid_move(self):
+        mem = GameMemory()
+        for persona in ("classic", "aggressive", "defensive", "random"):
+            for _ in range(100):
+                move = persona_bot_move(mem, persona)
+                assert move in MOVES, f"{persona} produced invalid move: {move}"
+
+    def test_unknown_persona_falls_back_to_classic(self):
+        mem = GameMemory()
+        for _ in range(100):
+            move = persona_bot_move(mem, "nonexistent")
+            assert move in MOVES
+
+    def test_random_persona_ignores_memory(self):
+        mem = GameMemory()
+        mem.record_round("rock", "scissors", "player")
+        mem.record_round("rock", "scissors", "player")
+        mem.record_round("rock", "scissors", "player")
+        seen = set()
+        for _ in range(500):
+            seen.add(persona_bot_move(mem, "random"))
+        assert len(seen) == 3
+
+    def test_aggressive_counters_player_move(self):
+        mem = GameMemory()
+        mem.record_round("rock", "scissors", "player")
+        seen = set()
+        for _ in range(200):
+            move = persona_bot_move(mem, "aggressive")
+            seen.add(move)
+        assert "paper" in seen
+
+    def test_defensive_blocks_last_player_move(self):
+        mem = GameMemory()
+        mem.record_round("rock", "paper", "bot")
+        for _ in range(50):
+            move = persona_bot_move(mem, "defensive")
+            assert move == "paper"
+
+    def test_defensive_repeats_winning_move(self):
+        mem = GameMemory()
+        mem.record_round("rock", "paper", "bot")
+        for _ in range(50):
+            assert persona_bot_move(mem, "defensive") == "paper"
+
+    def test_classic_uses_adaptive_strategy(self):
+        mem = GameMemory()
+        mem.record_round("rock", "scissors", "player")
+        mem.record_round("rock", "scissors", "player")
+        mem.record_round("rock", "scissors", "player")
+        for _ in range(200):
+            move = persona_bot_move(mem, "classic")
+            assert move in MOVES

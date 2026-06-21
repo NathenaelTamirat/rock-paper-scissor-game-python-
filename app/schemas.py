@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 class PlayRequest(BaseModel):
     player_move: str
+    persona: str = "classic"
 
 
 class PlayResponse(BaseModel):
