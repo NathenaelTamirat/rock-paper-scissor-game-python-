@@ -2,6 +2,7 @@ import hashlib
 import os
 import secrets
 import sqlite3
+import string
 from typing import Optional
 
 DB_PATH = os.environ.get("RPS_DB_PATH", "rps.db")
@@ -46,6 +47,18 @@ class Database:
                 losses INTEGER DEFAULT 0,
                 draws INTEGER DEFAULT 0,
                 streak INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS rooms (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                room_code TEXT UNIQUE NOT NULL,
+                player_a_id INTEGER NOT NULL REFERENCES users(id),
+                player_b_id INTEGER REFERENCES users(id),
+                move_a TEXT,
+                move_b TEXT,
+                winner TEXT,
+                status TEXT DEFAULT 'waiting',
+                created_at TEXT DEFAULT (datetime('now'))
             );
         """)
         self.conn.commit()
@@ -219,3 +232,102 @@ class Database:
             LIMIT ?
         """, (limit,)).fetchall()
         return [dict(r) for r in rows]
+
+    # --- Rooms (Multiplayer) ---
+
+    @staticmethod
+    def _generate_room_code() -> str:
+        return ''.join(
+            secrets.choice(string.ascii_uppercase + string.digits)
+            for _ in range(6)
+        )
+
+    def create_room(self, user_id: int) -> dict:
+        for _ in range(10):
+            code = self._generate_room_code()
+            try:
+                cur = self.conn.execute(
+                    "INSERT INTO rooms (room_code, player_a_id, status) "
+                    "VALUES (?, ?, 'waiting')",
+                    (code, user_id),
+                )
+                self.conn.commit()
+                return self.get_room(code)
+            except sqlite3.IntegrityError:
+                continue
+        raise RuntimeError("Failed to generate unique room code")
+
+    def get_room(self, room_code: str) -> Optional[dict]:
+        row = self.conn.execute("""
+            SELECT r.id, r.room_code, r.player_a_id, r.player_b_id,
+                   r.move_a, r.move_b, r.winner, r.status, r.created_at,
+                   a.username AS player_a_username,
+                   b.username AS player_b_username
+            FROM rooms r
+            JOIN users a ON a.id = r.player_a_id
+            LEFT JOIN users b ON b.id = r.player_b_id
+            WHERE r.room_code = ?
+        """, (room_code,)).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def join_room(self, room_code: str, user_id: int) -> dict:
+        room = self.get_room(room_code)
+        if room is None:
+            raise ValueError("Room not found")
+        if room["status"] != "waiting":
+            raise ValueError("Room is not accepting players")
+        if room["player_a_id"] == user_id:
+            raise ValueError("Cannot join your own room")
+        self.conn.execute(
+            "UPDATE rooms SET player_b_id = ?, status = 'playing' "
+            "WHERE room_code = ?",
+            (user_id, room_code),
+        )
+        self.conn.commit()
+        return self.get_room(room_code)
+
+    def submit_room_move(self, room_code: str, user_id: int, move: str) -> dict:
+        room = self.get_room(room_code)
+        if room is None:
+            raise ValueError("Room not found")
+        if room["status"] != "playing":
+            raise ValueError("Game is not in progress")
+
+        if room["player_a_id"] == user_id:
+            if room["move_a"] is not None:
+                raise ValueError("You already submitted your move")
+            col = "move_a"
+        elif room["player_b_id"] == user_id:
+            if room["move_b"] is not None:
+                raise ValueError("You already submitted your move")
+            col = "move_b"
+        else:
+            raise ValueError("You are not a player in this room")
+
+        self.conn.execute(
+            f"UPDATE rooms SET {col} = ? WHERE room_code = ?",
+            (move, room_code),
+        )
+        self.conn.commit()
+
+        room = self.get_room(room_code)
+
+        if room["move_a"] is not None and room["move_b"] is not None:
+            from app.rules import get_winner
+            raw = get_winner(room["move_a"], room["move_b"])
+            if raw == "player":
+                winner = "player_a"
+            elif raw == "bot":
+                winner = "player_b"
+            else:
+                winner = "draw"
+            self.conn.execute(
+                "UPDATE rooms SET winner = ?, status = 'complete' "
+                "WHERE room_code = ?",
+                (winner, room_code),
+            )
+            self.conn.commit()
+
+        return self.get_room(room_code)

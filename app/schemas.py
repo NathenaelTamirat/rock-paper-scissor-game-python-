@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel
 
 
@@ -48,3 +50,43 @@ class StatsResponse(BaseModel):
     win_rate: float
     favorite_move: str
     streak: int
+
+
+class CreateRoomResponse(BaseModel):
+    room_code: str
+    player_a_id: int
+    player_a_username: str
+    status: str
+
+
+class JoinRoomResponse(BaseModel):
+    room_code: str
+    player_a_id: int
+    player_a_username: str
+    player_b_id: int
+    player_b_username: str
+    status: str
+
+
+class RoomPlayRequest(BaseModel):
+    move: str
+
+
+class RoomPlayResponse(BaseModel):
+    room_code: str
+    status: str
+    your_move: str
+    opponent_move: Optional[str] = None
+    winner: Optional[str] = None
+
+
+class RoomStateResponse(BaseModel):
+    room_code: str
+    player_a_id: int
+    player_a_username: str
+    player_b_id: Optional[int] = None
+    player_b_username: Optional[str] = None
+    move_a_submitted: bool
+    move_b_submitted: bool
+    winner: Optional[str] = None
+    status: str

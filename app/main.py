@@ -9,6 +9,8 @@ from app.database import Database
 from app.memory import GameMemory
 from app.rules import MOVES, get_winner, validate_move
 from app.schemas import (
+    CreateRoomResponse,
+    JoinRoomResponse,
     LoginRequest,
     LoginResponse,
     PlayRequest,
@@ -16,6 +18,9 @@ from app.schemas import (
     ProfileResponse,
     RegisterRequest,
     RegisterResponse,
+    RoomPlayRequest,
+    RoomPlayResponse,
+    RoomStateResponse,
 )
 
 memory = GameMemory()
@@ -168,6 +173,100 @@ def profile(user_id: int):
 @app.get("/leaderboard")
 def leaderboard(limit: int = Query(default=10, ge=1, le=100)):
     return {"leaderboard": db.get_leaderboard(limit=limit)}
+
+
+@app.post("/rooms", response_model=CreateRoomResponse)
+def create_room(authorization: str = Header(default="")):
+    user_id = _resolve_user(authorization)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    room = db.create_room(user_id)
+    return CreateRoomResponse(
+        room_code=room["room_code"],
+        player_a_id=room["player_a_id"],
+        player_a_username=room["player_a_username"],
+        status=room["status"],
+    )
+
+
+@app.post("/rooms/{room_code}/join", response_model=JoinRoomResponse)
+def join_room(room_code: str, authorization: str = Header(default="")):
+    user_id = _resolve_user(authorization)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    try:
+        room = db.join_room(room_code.upper(), user_id)
+    except ValueError as e:
+        msg = str(e)
+        status = 404 if msg == "Room not found" else 400
+        raise HTTPException(status_code=status, detail=msg)
+    return JoinRoomResponse(
+        room_code=room["room_code"],
+        player_a_id=room["player_a_id"],
+        player_a_username=room["player_a_username"],
+        player_b_id=room["player_b_id"],
+        player_b_username=room["player_b_username"],
+        status=room["status"],
+    )
+
+
+@app.post("/rooms/{room_code}/play", response_model=RoomPlayResponse)
+def room_play(
+    room_code: str,
+    req: RoomPlayRequest,
+    authorization: str = Header(default=""),
+):
+    user_id = _resolve_user(authorization)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+
+    move = req.move.strip().lower()
+    if not validate_move(move):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid move. Choose from {', '.join(MOVES)}.",
+        )
+
+    try:
+        room = db.submit_room_move(room_code.upper(), user_id, move)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    is_a = room["player_a_id"] == user_id
+    is_b = room["player_b_id"] == user_id
+    your_move = room["move_a"] if is_a else room["move_b"]
+    opponent_move = None
+    winner = None
+    if room["status"] == "complete":
+        opponent_move = room["move_b"] if is_a else room["move_a"]
+        winner = room["winner"]
+
+    return RoomPlayResponse(
+        room_code=room["room_code"],
+        status=room["status"],
+        your_move=your_move,
+        opponent_move=opponent_move,
+        winner=winner,
+    )
+
+
+@app.get("/rooms/{room_code}", response_model=RoomStateResponse)
+def room_state(room_code: str):
+    room = db.get_room(room_code.upper())
+    if room is None:
+        raise HTTPException(status_code=404, detail="Room not found.")
+
+    return RoomStateResponse(
+        room_code=room["room_code"],
+        player_a_id=room["player_a_id"],
+        player_a_username=room["player_a_username"],
+        player_b_id=room["player_b_id"],
+        player_b_username=room["player_b_username"],
+        move_a_submitted=room["move_a"] is not None,
+        move_b_submitted=room["move_b"] is not None,
+        winner=room["winner"] if room["status"] == "complete" else None,
+        status=room["status"],
+    )
 
 
 def main() -> None:

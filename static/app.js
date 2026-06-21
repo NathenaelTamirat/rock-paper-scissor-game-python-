@@ -9,6 +9,138 @@ if (authToken) {
   document.getElementById("display-username").textContent = authUser;
 }
 
+let currentRoom = null;
+let roomPollInterval = null;
+
+function showRoomLobby() {
+  document.getElementById("mp-lobby").classList.remove("hidden");
+  document.getElementById("room-view").classList.add("hidden");
+}
+
+function showRoomView() {
+  document.getElementById("mp-lobby").classList.add("hidden");
+  document.getElementById("room-view").classList.remove("hidden");
+}
+
+async function createRoom() {
+  if (!authToken) return alert("You must be logged in to play multiplayer.");
+  try {
+    const data = await api("POST", "/rooms");
+    currentRoom = data.room_code;
+    document.getElementById("room-code-display").textContent = currentRoom;
+    showRoomView();
+    renderRoomState({ status: "waiting", player_a_username: authUser, player_b_id: null });
+    startRoomPolling();
+  } catch (err) {
+    alert("Failed to create room: " + err.message);
+  }
+}
+
+async function joinRoom() {
+  if (!authToken) return alert("You must be logged in to play multiplayer.");
+  const code = document.getElementById("room-code-input").value.trim().toUpperCase();
+  if (!code) return alert("Enter a room code.");
+  try {
+    const data = await api("POST", "/rooms/" + code + "/join");
+    currentRoom = data.room_code;
+    document.getElementById("room-code-display").textContent = currentRoom;
+    showRoomView();
+    renderRoomState({ ...data, move_a_submitted: false, move_b_submitted: false });
+    startRoomPolling();
+  } catch (err) {
+    alert("Failed to join room: " + err.message);
+  }
+}
+
+async function playRoom(move) {
+  if (!currentRoom) return;
+  try {
+    const data = await api("POST", "/rooms/" + currentRoom + "/play", { move });
+    if (data.status === "complete") {
+      stopRoomPolling();
+    }
+    await loadRoom();
+  } catch (err) {
+    alert("Failed to play: " + err.message);
+  }
+}
+
+async function loadRoom() {
+  if (!currentRoom) return;
+  try {
+    const data = await api("GET", "/rooms/" + currentRoom);
+    renderRoomState(data);
+    if (data.status === "complete") {
+      stopRoomPolling();
+    }
+  } catch {
+    leaveRoom();
+  }
+}
+
+function renderRoomState(data) {
+  document.getElementById("room-players").textContent =
+    data.player_a_username +
+    (data.player_b_username ? " vs " + data.player_b_username : " (waiting for opponent...)");
+
+  const statusEl = document.getElementById("room-status-text");
+  if (data.status === "waiting") statusEl.textContent = "Waiting for opponent...";
+  else if (data.status === "playing") statusEl.textContent = "In progress";
+  else statusEl.textContent = "Complete";
+
+  const moveBtns = document.getElementById("room-move-buttons");
+  const resultEl = document.getElementById("room-result");
+  resultEl.classList.add("hidden");
+
+  if (data.status === "playing") {
+    const myId = data.player_a_username === authUser
+      ? data.player_a_id : data.player_b_id;
+    const iAmA = data.player_a_id === myId;
+    const mySubmitted = iAmA ? data.move_a_submitted : data.move_b_submitted;
+
+    if (mySubmitted) {
+      moveBtns.classList.add("hidden");
+      statusEl.textContent = "Waiting for opponent's move...";
+    } else {
+      moveBtns.classList.remove("hidden");
+    }
+  } else if (data.status === "complete") {
+    moveBtns.classList.add("hidden");
+    resultEl.classList.remove("hidden");
+    const myId = data.player_a_username === authUser
+      ? data.player_a_id : data.player_b_id;
+    const iAmA = data.player_a_id === myId;
+    const iWon = data.winner === "player_a" && iAmA || data.winner === "player_b" && !iAmA;
+    const isDraw = data.winner === "draw";
+    if (isDraw) resultEl.innerHTML = "<strong>It's a draw!</strong>";
+    else if (iWon) resultEl.innerHTML = "<strong>You won!</strong>";
+    else resultEl.innerHTML = "<strong>You lost!</strong>";
+  } else {
+    moveBtns.classList.add("hidden");
+  }
+}
+
+function startRoomPolling() {
+  stopRoomPolling();
+  roomPollInterval = setInterval(loadRoom, 2000);
+}
+
+function stopRoomPolling() {
+  if (roomPollInterval) {
+    clearInterval(roomPollInterval);
+    roomPollInterval = null;
+  }
+}
+
+function leaveRoom() {
+  currentRoom = null;
+  stopRoomPolling();
+  showRoomLobby();
+  document.getElementById("room-code-input").value = "";
+  document.getElementById("room-result").classList.add("hidden");
+  document.getElementById("room-move-buttons").classList.add("hidden");
+}
+
 async function api(method, path, body) {
   const opts = {
     method,

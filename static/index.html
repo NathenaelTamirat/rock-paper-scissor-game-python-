@@ -33,6 +33,29 @@
     </div>
   </section>
 
+  <section id="multiplayer-section" class="card">
+    <h2>Multiplayer</h2>
+    <div id="mp-lobby">
+      <button onclick="createRoom()" class="btn">Create Room</button>
+      <div class="join-row">
+        <input type="text" id="room-code-input" placeholder="Enter room code" maxlength="6">
+        <button onclick="joinRoom()" class="btn">Join Room</button>
+      </div>
+    </div>
+    <div id="room-view" class="hidden">
+      <p>Room: <strong id="room-code-display"></strong></p>
+      <p>Players: <span id="room-players"></span></p>
+      <p>Status: <span id="room-status-text"></span></p>
+      <div id="room-move-buttons" class="moves hidden">
+        <button class="move-btn" onclick="playRoom('rock')">Rock</button>
+        <button class="move-btn" onclick="playRoom('paper')">Paper</button>
+        <button class="move-btn" onclick="playRoom('scissors')">Scissors</button>
+      </div>
+      <p id="room-result" class="hidden"></p>
+      <button onclick="leaveRoom()" class="reset-btn">Leave Room</button>
+    </div>
+  </section>
+
   <section class="card">
     <h2>Choose your move</h2>
     <div class="persona-row">
