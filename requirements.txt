@@ -1,3 +1,4 @@
 # Core dependencies
 fastapi[standard]
+httpx
 pytest<8
