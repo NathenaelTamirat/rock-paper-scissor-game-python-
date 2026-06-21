@@ -1,4 +1,4 @@
-const API = "";
+var API = typeof API_BASE_URL !== "undefined" ? API_BASE_URL : "";
 
 let authToken = localStorage.getItem("rps_token") || "";
 let authUser = localStorage.getItem("rps_user") || "";
