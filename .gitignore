@@ -24,5 +24,8 @@ Thumbs.db
 .env
 *.db
 
-# Project plan (not part of source code)
 implementation.md
+
+# GitHub workflows
+.github/workflows/
+
