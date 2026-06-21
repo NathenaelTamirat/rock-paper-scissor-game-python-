@@ -13,6 +13,10 @@ from app.schemas import (
     JoinRoomResponse,
     LoginRequest,
     LoginResponse,
+    MatchmakingJoinRequest,
+    MatchmakingJoinResponse,
+    MatchmakingLeaveResponse,
+    MatchmakingStatusResponse,
     PlayRequest,
     PlayResponse,
     ProfileResponse,
@@ -267,6 +271,53 @@ def room_state(room_code: str):
         winner=room["winner"] if room["status"] == "complete" else None,
         status=room["status"],
     )
+
+
+@app.post("/matchmaking/join", response_model=MatchmakingJoinResponse)
+def matchmaking_join(
+    req: MatchmakingJoinRequest,
+    authorization: str = Header(default=""),
+):
+    user_id = _resolve_user(authorization)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+
+    db.join_queue(user_id, req.preferred_mode)
+    db.process_queue()
+    pos = db.get_queue_position(user_id)
+
+    if pos is not None:
+        return MatchmakingJoinResponse(status="searching", position=pos)
+
+    return MatchmakingJoinResponse(status="matched")
+
+
+@app.post("/matchmaking/leave", response_model=MatchmakingLeaveResponse)
+def matchmaking_leave(authorization: str = Header(default="")):
+    user_id = _resolve_user(authorization)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    db.leave_queue(user_id)
+    return MatchmakingLeaveResponse(status="ok")
+
+
+@app.get("/matchmaking/status/{user_id}", response_model=MatchmakingStatusResponse)
+def matchmaking_status(user_id: int, authorization: str = Header(default="")):
+    caller_id = _resolve_user(authorization)
+    if caller_id is None:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+
+    pos = db.get_queue_position(user_id)
+    if pos is not None:
+        return MatchmakingStatusResponse(status="searching", position=pos)
+
+    room = db.get_user_active_room(user_id)
+    if room is not None:
+        return MatchmakingStatusResponse(
+            status="matched", room_code=room["room_code"],
+        )
+
+    return MatchmakingStatusResponse(status="idle")
 
 
 def main() -> None:

@@ -524,3 +524,157 @@ class TestMultiplayer:
         code = create.json()["room_code"]
         response = client.get(f"/rooms/{code}")
         assert response.status_code == 200
+
+
+class TestMatchmaking:
+    USER_A = "mm_alice"
+    USER_B = "mm_bob"
+    PASSWORD = "pass1234"
+
+    def setup_method(self):
+        for uname in [self.USER_A, self.USER_B]:
+            existing = db.get_user_by_username(uname)
+            if existing:
+                uid = existing["id"]
+                db.conn.execute("DELETE FROM matchmaking_queue WHERE user_id = ?", (uid,))
+                db.conn.execute("DELETE FROM sessions WHERE user_id = ?", (uid,))
+                db.conn.execute("DELETE FROM rounds WHERE user_id = ?", (uid,))
+                db.conn.execute("DELETE FROM stats WHERE user_id = ?", (uid,))
+                db.conn.execute("DELETE FROM rooms WHERE player_a_id = ? OR player_b_id = ?",
+                                (uid, uid))
+                db.conn.execute("DELETE FROM users WHERE id = ?", (uid,))
+        db.conn.commit()
+
+    def _register(self, username):
+        r = client.post("/register", json={
+            "username": username, "password": self.PASSWORD,
+        })
+        assert r.status_code == 200
+        return r.json()
+
+    def _login(self, username):
+        r = client.post("/login", json={
+            "username": username, "password": self.PASSWORD,
+        })
+        assert r.status_code == 200
+        return r.json()
+
+    def _auth_header(self, token):
+        return {"Authorization": f"Bearer {token}"}
+
+    def test_join_requires_auth(self):
+        response = client.post("/matchmaking/join", json={})
+        assert response.status_code == 401
+
+    def test_leave_requires_auth(self):
+        response = client.post("/matchmaking/leave")
+        assert response.status_code == 401
+
+    def test_status_requires_auth(self):
+        response = client.get("/matchmaking/status/1")
+        assert response.status_code == 401
+
+    def test_join_queue(self):
+        user = self._register(self.USER_A)
+        token = self._login(self.USER_A)["token"]
+        response = client.post("/matchmaking/join", json={},
+                               headers=self._auth_header(token))
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "searching"
+        assert data["position"] == 1
+
+    def test_leave_queue(self):
+        user = self._register(self.USER_A)
+        token = self._login(self.USER_A)["token"]
+        client.post("/matchmaking/join", json={},
+                    headers=self._auth_header(token))
+        response = client.post("/matchmaking/leave",
+                               headers=self._auth_header(token))
+        assert response.status_code == 200
+        assert response.json()["status"] == "ok"
+
+    def test_status_searching(self):
+        user = self._register(self.USER_A)
+        token = self._login(self.USER_A)["token"]
+        uid = user["user_id"]
+        client.post("/matchmaking/join", json={},
+                    headers=self._auth_header(token))
+        response = client.get(f"/matchmaking/status/{uid}",
+                              headers=self._auth_header(token))
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "searching"
+        assert data["position"] == 1
+
+    def test_status_idle(self):
+        user = self._register(self.USER_A)
+        token = self._login(self.USER_A)["token"]
+        uid = user["user_id"]
+        response = client.get(f"/matchmaking/status/{uid}",
+                              headers=self._auth_header(token))
+        assert response.status_code == 200
+        assert response.json()["status"] == "idle"
+
+    def test_pairing_creates_room(self):
+        user_a = self._register(self.USER_A)
+        user_b = self._register(self.USER_B)
+        token_a = self._login(self.USER_A)["token"]
+        token_b = self._login(self.USER_B)["token"]
+        uid_a = user_a["user_id"]
+        uid_b = user_b["user_id"]
+
+        # Both join queue
+        client.post("/matchmaking/join", json={},
+                    headers=self._auth_header(token_a))
+        client.post("/matchmaking/join", json={},
+                    headers=self._auth_header(token_b))
+
+        # Both should now be matched (paired)
+        s_a = client.get(f"/matchmaking/status/{uid_a}",
+                         headers=self._auth_header(token_a)).json()
+        s_b = client.get(f"/matchmaking/status/{uid_b}",
+                         headers=self._auth_header(token_b)).json()
+
+        assert s_a["status"] == "matched"
+        assert s_b["status"] == "matched"
+        assert s_a["room_code"] == s_b["room_code"]
+
+        # Room should be in "playing" status
+        room = client.get(f"/rooms/{s_a['room_code']}").json()
+        assert room["status"] == "playing"
+        assert room["player_a_id"] == uid_a or room["player_a_id"] == uid_b
+        assert room["player_b_id"] == uid_a or room["player_b_id"] == uid_b
+
+    def test_join_twice_returns_searching(self):
+        user = self._register(self.USER_A)
+        token = self._login(self.USER_A)["token"]
+        r1 = client.post("/matchmaking/join", json={},
+                         headers=self._auth_header(token))
+        assert r1.json()["status"] == "searching"
+        r2 = client.post("/matchmaking/join", json={},
+                         headers=self._auth_header(token))
+        assert r2.json()["status"] == "searching"
+
+    def test_pairing_removes_from_queue(self):
+        user_a = self._register(self.USER_A)
+        user_b = self._register(self.USER_B)
+        token_a = self._login(self.USER_A)["token"]
+        token_b = self._login(self.USER_B)["token"]
+        uid_a = user_a["user_id"]
+        uid_b = user_b["user_id"]
+
+        client.post("/matchmaking/join", json={},
+                    headers=self._auth_header(token_a))
+        client.post("/matchmaking/join", json={},
+                    headers=self._auth_header(token_b))
+
+        # Verify both were removed from queue (no longer searching)
+        s_a = client.get(f"/matchmaking/status/{uid_a}",
+                         headers=self._auth_header(token_a)).json()
+        assert s_a["status"] == "matched"
+
+        # If we check again, should stay matched (room still exists)
+        s_a2 = client.get(f"/matchmaking/status/{uid_a}",
+                          headers=self._auth_header(token_a)).json()
+        assert s_a2["status"] == "matched"

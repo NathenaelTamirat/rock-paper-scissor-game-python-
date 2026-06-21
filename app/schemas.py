@@ -90,3 +90,22 @@ class RoomStateResponse(BaseModel):
     move_b_submitted: bool
     winner: Optional[str] = None
     status: str
+
+
+class MatchmakingJoinRequest(BaseModel):
+    preferred_mode: str = "classic"
+
+
+class MatchmakingJoinResponse(BaseModel):
+    status: str
+    position: Optional[int] = None
+
+
+class MatchmakingLeaveResponse(BaseModel):
+    status: str
+
+
+class MatchmakingStatusResponse(BaseModel):
+    status: str
+    position: Optional[int] = None
+    room_code: Optional[str] = None

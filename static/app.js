@@ -2,6 +2,7 @@ const API = "";
 
 let authToken = localStorage.getItem("rps_token") || "";
 let authUser = localStorage.getItem("rps_user") || "";
+let authUserId = parseInt(localStorage.getItem("rps_user_id") || "0", 10);
 
 if (authToken) {
   document.getElementById("auth-forms").classList.add("hidden");
@@ -129,6 +130,72 @@ function stopRoomPolling() {
   if (roomPollInterval) {
     clearInterval(roomPollInterval);
     roomPollInterval = null;
+  }
+}
+
+let mmPollInterval = null;
+
+async function findMatch() {
+  if (!authToken) return alert("You must be logged in to play multiplayer.");
+  try {
+    await api("POST", "/matchmaking/join", { preferred_mode: "classic" });
+    document.getElementById("mp-lobby").classList.add("hidden");
+    document.getElementById("matchmaking-waiting").classList.remove("hidden");
+    startMMPolling();
+  } catch (err) {
+    alert("Failed to join matchmaking: " + err.message);
+  }
+}
+
+async function cancelMatchmaking() {
+  stopMMPolling();
+  try {
+    await api("POST", "/matchmaking/leave");
+  } catch {
+    // ignore
+  }
+  document.getElementById("matchmaking-waiting").classList.add("hidden");
+  document.getElementById("mp-lobby").classList.remove("hidden");
+}
+
+async function checkMatchingStatus() {
+  if (!authUserId) return;
+  try {
+    const data = await api("GET", "/matchmaking/status/" + authUserId);
+    if (data.status === "searching") {
+      const posEl = document.getElementById("mm-position");
+      posEl.textContent = "Position in queue: " + (data.position || "?");
+    } else if (data.status === "matched") {
+      stopMMPolling();
+      document.getElementById("matchmaking-waiting").classList.add("hidden");
+      document.getElementById("mp-lobby").classList.remove("hidden");
+      // Auto-join the matched room
+      currentRoom = data.room_code;
+      document.getElementById("room-code-display").textContent = currentRoom;
+      try {
+        const roomData = await api("GET", "/rooms/" + currentRoom);
+        showRoomView();
+        renderRoomState(roomData);
+        startRoomPolling();
+      } catch {
+        alert("Failed to load matched room.");
+      }
+    }
+  } catch {
+    // ignore polling errors
+  }
+}
+
+function startMMPolling() {
+  stopMMPolling();
+  checkMatchingStatus();
+  mmPollInterval = setInterval(checkMatchingStatus, 2000);
+}
+
+function stopMMPolling() {
+  if (mmPollInterval) {
+    clearInterval(mmPollInterval);
+    mmPollInterval = null;
   }
 }
 
@@ -272,8 +339,10 @@ async function login() {
     const data = await api("POST", "/login", { username, password });
     authToken = data.token;
     authUser = username;
+    authUserId = data.user_id;
     localStorage.setItem("rps_token", authToken);
     localStorage.setItem("rps_user", authUser);
+    localStorage.setItem("rps_user_id", String(authUserId));
 
     document.getElementById("auth-forms").classList.add("hidden");
     document.getElementById("user-info").classList.remove("hidden");
@@ -289,8 +358,10 @@ async function login() {
 function logout() {
   authToken = "";
   authUser = "";
+  authUserId = 0;
   localStorage.removeItem("rps_token");
   localStorage.removeItem("rps_user");
+  localStorage.removeItem("rps_user_id");
   document.getElementById("auth-forms").classList.remove("hidden");
   document.getElementById("user-info").classList.add("hidden");
 }

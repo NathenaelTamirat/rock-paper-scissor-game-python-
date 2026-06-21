@@ -60,6 +60,13 @@ class Database:
                 status TEXT DEFAULT 'waiting',
                 created_at TEXT DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS matchmaking_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+                preferred_mode TEXT DEFAULT 'classic',
+                enqueued_at TEXT DEFAULT (datetime('now'))
+            );
         """)
         self.conn.commit()
         # Migration: add streak column if missing on existing databases
@@ -331,3 +338,83 @@ class Database:
             self.conn.commit()
 
         return self.get_room(room_code)
+
+    # --- Matchmaking ---
+
+    def join_queue(self, user_id: int, preferred_mode: str = "classic") -> dict:
+        existing = self.conn.execute(
+            "SELECT * FROM matchmaking_queue WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        if existing is not None:
+            return dict(existing)
+
+        self.conn.execute(
+            "INSERT INTO matchmaking_queue (user_id, preferred_mode) VALUES (?, ?)",
+            (user_id, preferred_mode),
+        )
+        self.conn.commit()
+
+        entry = self.conn.execute(
+            "SELECT * FROM matchmaking_queue WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        return dict(entry)
+
+    def leave_queue(self, user_id: int) -> None:
+        self.conn.execute(
+            "DELETE FROM matchmaking_queue WHERE user_id = ?",
+            (user_id,),
+        )
+        self.conn.commit()
+
+    def get_queue_position(self, user_id: int) -> Optional[int]:
+        all_entries = self.conn.execute(
+            "SELECT id, user_id, enqueued_at FROM matchmaking_queue "
+            "ORDER BY enqueued_at ASC"
+        ).fetchall()
+        for i, row in enumerate(all_entries):
+            if row["user_id"] == user_id:
+                return i + 1
+        return None
+
+    def is_user_in_queue(self, user_id: int) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM matchmaking_queue WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        return row is not None
+
+    def get_user_active_room(self, user_id: int) -> Optional[dict]:
+        row = self.conn.execute("""
+            SELECT room_code FROM rooms
+            WHERE (player_a_id = ? OR player_b_id = ?)
+              AND status != 'complete'
+            ORDER BY created_at DESC LIMIT 1
+        """, (user_id, user_id)).fetchone()
+        if row is None:
+            return None
+        return self.get_room(row["room_code"])
+
+    def process_queue(self) -> Optional[str]:
+        rows = self.conn.execute(
+            "SELECT user_id FROM matchmaking_queue "
+            "ORDER BY enqueued_at ASC LIMIT 2"
+        ).fetchall()
+
+        if len(rows) < 2:
+            return None
+
+        user_a_id = rows[0]["user_id"]
+        user_b_id = rows[1]["user_id"]
+
+        room = self.create_room(user_a_id)
+        self.join_room(room["room_code"], user_b_id)
+
+        self.conn.execute(
+            "DELETE FROM matchmaking_queue WHERE user_id IN (?, ?)",
+            (user_a_id, user_b_id),
+        )
+        self.conn.commit()
+
+        return room["room_code"]
