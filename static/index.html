@@ -35,6 +35,15 @@
 
   <section class="card">
     <h2>Choose your move</h2>
+    <div class="persona-row">
+      <label for="persona-select">Bot persona:</label>
+      <select id="persona-select">
+        <option value="classic">Classic</option>
+        <option value="aggressive">Aggressive</option>
+        <option value="defensive">Defensive</option>
+        <option value="random">Random</option>
+      </select>
+    </div>
     <div class="moves">
       <button class="move-btn" onclick="play('rock')">Rock</button>
       <button class="move-btn" onclick="play('paper')">Paper</button>

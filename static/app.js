@@ -33,7 +33,8 @@ async function play(move) {
   document.getElementById("result-section").classList.add("hidden");
 
   try {
-    const data = await api("POST", "/play", { player_move: move });
+    const persona = document.getElementById("persona-select").value;
+    const data = await api("POST", "/play", { player_move: move, persona });
 
     document.getElementById("result-section").classList.remove("hidden");
     const emojis = { rock: "✊", paper: "✋", scissors: "✌️" };
@@ -58,6 +59,20 @@ async function play(move) {
     alert("Error: " + err.message);
   } finally {
     document.getElementById("loading").classList.add("hidden");
+  }
+}
+
+async function loadStats() {
+  try {
+    const data = await api("GET", "/history");
+    if (data.stats) {
+      document.getElementById("score-section").classList.remove("hidden");
+      document.getElementById("score-wins").textContent = data.stats.wins;
+      document.getElementById("score-losses").textContent = data.stats.losses;
+      document.getElementById("score-draws").textContent = data.stats.draws;
+    }
+  } catch {
+    // silently ignore
   }
 }
 
@@ -164,4 +179,5 @@ async function resetGame() {
 }
 
 loadHistory();
+loadStats();
 loadLeaderboard();

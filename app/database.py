@@ -194,6 +194,13 @@ class Database:
         stats["win_rate"] = (
             round(stats["wins"] / total, 4) if total > 0 else 0.0
         )
+        fav = self.conn.execute(
+            "SELECT player_move, COUNT(*) AS cnt FROM rounds "
+            "WHERE user_id = ? "
+            "GROUP BY player_move ORDER BY cnt DESC LIMIT 1",
+            (user_id,),
+        ).fetchone()
+        stats["favorite_move"] = fav["player_move"] if fav else None
         return stats
 
     def get_leaderboard(self, limit: int = 10) -> list[dict]:
