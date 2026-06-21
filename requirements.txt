@@ -1,0 +1,3 @@
+# Core dependencies
+fastapi[standard]
+pytest
