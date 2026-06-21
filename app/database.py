@@ -271,6 +271,44 @@ class Database:
         """, (limit,)).fetchall()
         return [dict(r) for r in rows]
 
+    # --- Analytics ---
+
+    def get_analytics_summary(self, user_id: int) -> dict:
+        return self.get_user_stats(user_id) or {
+            "total_rounds": 0, "wins": 0, "losses": 0, "draws": 0,
+            "win_rate": 0.0, "favorite_move": None, "streak": 0,
+        }
+
+    def get_analytics_move_distribution(self, user_id: int) -> list[dict]:
+        from app.rules import MOVES
+        rows = self.conn.execute(
+            "SELECT player_move, COUNT(*) AS count FROM rounds "
+            "WHERE user_id = ? GROUP BY player_move ORDER BY count DESC",
+            (user_id,),
+        ).fetchall()
+        result = {m: 0 for m in MOVES}
+        for r in rows:
+            result[r["player_move"]] = r["count"]
+        return [{"move": m, "count": c} for m, c in result.items()]
+
+    def get_analytics_timeline(
+        self, user_id: int, days: int = 7,
+    ) -> list[dict]:
+        from datetime import datetime, timedelta
+        rows = self.conn.execute("""
+            SELECT DATE(played_at) AS day,
+                   COUNT(*) AS games,
+                   SUM(CASE WHEN winner = 'player' THEN 1 ELSE 0 END) AS wins,
+                   SUM(CASE WHEN winner = 'bot' THEN 1 ELSE 0 END) AS losses,
+                   SUM(CASE WHEN winner = 'draw' THEN 1 ELSE 0 END) AS draws
+            FROM rounds
+            WHERE user_id = ?
+              AND played_at >= DATE('now', ?)
+            GROUP BY DATE(played_at)
+            ORDER BY day ASC
+        """, (user_id, f"-{days} days")).fetchall()
+        return [dict(r) for r in rows]
+
     # --- Rooms (Multiplayer) ---
 
     @staticmethod

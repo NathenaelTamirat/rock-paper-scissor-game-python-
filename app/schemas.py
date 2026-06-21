@@ -144,6 +144,37 @@ class TournamentMatchInfo(BaseModel):
     status: str
 
 
+class AnalyticsSummaryResponse(BaseModel):
+    total_rounds: int
+    wins: int
+    losses: int
+    draws: int
+    win_rate: float
+    favorite_move: Optional[str] = None
+    streak: int
+
+
+class AnalyticsMoveItem(BaseModel):
+    move: str
+    count: int
+
+
+class AnalyticsMovesResponse(BaseModel):
+    distribution: list
+
+
+class AnalyticsTimelineItem(BaseModel):
+    day: str
+    games: int
+    wins: int
+    losses: int
+    draws: int
+
+
+class AnalyticsTimelineResponse(BaseModel):
+    timeline: list
+
+
 class TournamentStateResponse(BaseModel):
     code: str
     name: str

@@ -9,6 +9,9 @@ from app.database import Database
 from app.memory import GameMemory
 from app.rules import MOVES, get_winner, validate_move
 from app.schemas import (
+    AnalyticsMovesResponse,
+    AnalyticsSummaryResponse,
+    AnalyticsTimelineResponse,
     CreateRoomResponse,
     JoinRoomResponse,
     LoginRequest,
@@ -181,6 +184,47 @@ def profile(user_id: int):
 @app.get("/leaderboard")
 def leaderboard(limit: int = Query(default=10, ge=1, le=100)):
     return {"leaderboard": db.get_leaderboard(limit=limit)}
+
+
+@app.get("/analytics/summary", response_model=AnalyticsSummaryResponse)
+def analytics_summary(authorization: str = Header(default="")):
+    user_id = _resolve_user(authorization)
+    if user_id is None:
+        if memory.total_rounds == 0:
+            return AnalyticsSummaryResponse(
+                total_rounds=0, wins=0, losses=0, draws=0,
+                win_rate=0.0, favorite_move=None, streak=0,
+            )
+        mem = memory.get_stats()
+        return AnalyticsSummaryResponse(**mem)
+    return AnalyticsSummaryResponse(**db.get_analytics_summary(user_id))
+
+
+@app.get("/analytics/moves", response_model=AnalyticsMovesResponse)
+def analytics_moves(authorization: str = Header(default="")):
+    user_id = _resolve_user(authorization)
+    if user_id is None:
+        dist = [
+            {"move": m, "count": memory.player_move_counts[m]}
+            for m in MOVES
+        ]
+        return AnalyticsMovesResponse(distribution=dist)
+    return AnalyticsMovesResponse(
+        distribution=db.get_analytics_move_distribution(user_id),
+    )
+
+
+@app.get("/analytics/timeline", response_model=AnalyticsTimelineResponse)
+def analytics_timeline(
+    days: int = Query(default=7, ge=1, le=365),
+    authorization: str = Header(default=""),
+):
+    user_id = _resolve_user(authorization)
+    if user_id is None:
+        return AnalyticsTimelineResponse(timeline=[])
+    return AnalyticsTimelineResponse(
+        timeline=db.get_analytics_timeline(user_id, days),
+    )
 
 
 @app.post("/rooms", response_model=CreateRoomResponse)

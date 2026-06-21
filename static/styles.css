@@ -150,6 +150,46 @@ header h1 { color: #1a1a2e; font-size: 1.8rem; }
   border-bottom: 1px solid #f0f0f0;
 }
 
+.analytics-summary-row {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+.analytics-summary-row span {
+  background: #f8f9ff;
+  padding: 6px 14px;
+  border-radius: 8px;
+  border: 1px solid #e0e0e0;
+}
+
+.charts-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.chart-box {
+  background: #fafbfc;
+  border: 1px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+  flex: 1 1 200px;
+  max-width: 320px;
+}
+.chart-box h3 {
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+  color: #555;
+}
+.chart-box canvas {
+  max-width: 100%;
+  height: auto;
+}
+
 @media (max-width: 480px) {
   .moves { flex-direction: column; }
   #auth-forms { flex-direction: column; }

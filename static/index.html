@@ -131,6 +131,30 @@
     </div>
   </section>
 
+  <section id="analytics-section" class="card hidden">
+    <h2>Analytics</h2>
+    <div class="analytics-summary-row">
+      <span>Win Rate: <strong id="an-win-rate">0%</strong></span>
+      <span>Favorite: <strong id="an-fav-move">-</strong></span>
+      <span>Streak: <strong id="an-streak">0</strong></span>
+      <span>Total Games: <strong id="an-total">0</strong></span>
+    </div>
+    <div class="charts-row">
+      <div class="chart-box">
+        <h3>Move Distribution</h3>
+        <canvas id="chart-moves" width="200" height="200"></canvas>
+      </div>
+      <div class="chart-box">
+        <h3>Results</h3>
+        <canvas id="chart-results" width="200" height="200"></canvas>
+      </div>
+      <div class="chart-box">
+        <h3>Timeline</h3>
+        <canvas id="chart-timeline" width="300" height="200"></canvas>
+      </div>
+    </div>
+  </section>
+
   <section id="leaderboard-section" class="card hidden">
     <h2>Leaderboard</h2>
     <table id="leaderboard-table">
@@ -149,6 +173,7 @@
   </section>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

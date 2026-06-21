@@ -873,3 +873,82 @@ class TestTournament:
         assert data["status"] == "complete"
         assert len(data["matches"]) == 3
         assert data["winner_id"] is not None
+
+
+class TestAnalytics:
+    def setup_method(self):
+        memory.reset()
+        self._user_counter = getattr(self.__class__, "_user_counter", 0) + 1
+        self.__class__._user_counter = self._user_counter
+        username = f"an_user_{self._user_counter}"
+        client.post("/register", json={"username": username, "password": "pass1234"})
+        r = client.post("/login", json={"username": username, "password": "pass1234"})
+        self.token = r.json()["token"]
+
+    def _auth_header(self):
+        return {"Authorization": f"Bearer {self.token}"}
+
+    def test_analytics_summary_anonymous(self):
+        resp = client.get("/analytics/summary")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_rounds"] == 0
+        assert data["wins"] == 0
+        assert data["losses"] == 0
+        assert data["draws"] == 0
+        assert data["win_rate"] == 0.0
+
+    def test_analytics_summary_authenticated(self):
+        client.post("/play", json={"player_move": "rock"},
+                    headers=self._auth_header())
+        client.post("/play", json={"player_move": "paper"},
+                    headers=self._auth_header())
+        resp = client.get("/analytics/summary",
+                          headers=self._auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_rounds"] == 2
+        assert isinstance(data["win_rate"], float)
+        assert data["favorite_move"] in ("rock", "paper", "scissors")
+
+    def test_analytics_moves_anonymous(self):
+        resp = client.get("/analytics/moves")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "distribution" in data
+        # Should have 3 moves with 0 count before any play
+        assert len(data["distribution"]) == 3
+
+    def test_analytics_moves_authenticated(self):
+        client.post("/play", json={"player_move": "rock"},
+                    headers=self._auth_header())
+        client.post("/play", json={"player_move": "rock"},
+                    headers=self._auth_header())
+        resp = client.get("/analytics/moves",
+                          headers=self._auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        rock_item = [d for d in data["distribution"] if d["move"] == "rock"]
+        assert len(rock_item) == 1
+        assert rock_item[0]["count"] == 2
+
+    def test_analytics_timeline_requires_auth(self):
+        resp = client.get("/analytics/timeline")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["timeline"] == []
+
+    def test_analytics_timeline_authenticated(self):
+        client.post("/play", json={"player_move": "scissors"},
+                    headers=self._auth_header())
+        resp = client.get("/analytics/timeline?days=7",
+                          headers=self._auth_header())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "timeline" in data
+        # At least today's entry
+        assert len(data["timeline"]) >= 1
+        entry = data["timeline"][0]
+        assert "day" in entry
+        assert "games" in entry
+        assert entry["games"] >= 1

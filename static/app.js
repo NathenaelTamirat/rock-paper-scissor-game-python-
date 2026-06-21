@@ -13,6 +13,10 @@ if (authToken) {
 let currentRoom = null;
 let roomPollInterval = null;
 
+let chartMoves = null;
+let chartResults = null;
+let chartTimeline = null;
+
 function showRoomLobby() {
   document.getElementById("mp-lobby").classList.remove("hidden");
   document.getElementById("room-view").classList.add("hidden");
@@ -254,6 +258,7 @@ async function play(move) {
 
     loadHistory();
     loadLeaderboard();
+    loadAnalytics();
   } catch (err) {
     alert("Error: " + err.message);
   } finally {
@@ -350,6 +355,7 @@ async function login() {
 
     document.getElementById("login-username").value = "";
     document.getElementById("login-password").value = "";
+    loadAnalytics();
   } catch (err) {
     alert("Login failed: " + err.message);
   }
@@ -364,6 +370,7 @@ function logout() {
   localStorage.removeItem("rps_user_id");
   document.getElementById("auth-forms").classList.remove("hidden");
   document.getElementById("user-info").classList.add("hidden");
+  loadAnalytics();
 }
 
 async function resetGame() {
@@ -484,6 +491,89 @@ function renderTournament(data) {
   }
 }
 
+var CHART_COLORS = ["#4e79a7", "#f28e2b", "#e15759"];
+
+async function loadAnalytics() {
+  try {
+    const summary = await api("GET", "/analytics/summary");
+    document.getElementById("an-win-rate").textContent =
+      (summary.win_rate * 100).toFixed(1) + "%";
+    document.getElementById("an-fav-move").textContent =
+      summary.favorite_move || "-";
+    document.getElementById("an-streak").textContent = summary.streak;
+    document.getElementById("an-total").textContent = summary.total_rounds;
+
+    document.getElementById("analytics-section").classList.remove("hidden");
+  } catch {
+    document.getElementById("analytics-section").classList.add("hidden");
+    return;
+  }
+
+  try {
+    const moves = await api("GET", "/analytics/moves");
+    const dist = moves.distribution || [];
+    if (chartMoves) chartMoves.destroy();
+    chartMoves = new Chart(document.getElementById("chart-moves"), {
+      type: "pie",
+      data: {
+        labels: dist.map(function(d) { return d.move; }),
+        datasets: [{
+          data: dist.map(function(d) { return d.count; }),
+          backgroundColor: CHART_COLORS,
+        }],
+      },
+      options: { responsive: false, plugins: { legend: { position: "bottom" } } },
+    });
+  } catch {}
+  try {
+    const timeline = await api("GET", "/analytics/timeline?days=7");
+    const tl = timeline.timeline || [];
+    if (chartResults) chartResults.destroy();
+    chartResults = new Chart(document.getElementById("chart-results"), {
+      type: "bar",
+      data: {
+        labels: ["Wins", "Losses", "Draws"],
+        datasets: [{
+          data: [
+            tl.reduce(function(s, d) { return s + d.wins; }, 0),
+            tl.reduce(function(s, d) { return s + d.losses; }, 0),
+            tl.reduce(function(s, d) { return s + d.draws; }, 0),
+          ],
+          backgroundColor: CHART_COLORS,
+        }],
+      },
+      options: {
+        responsive: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+      },
+    });
+    if (tl.length > 0) {
+      if (chartTimeline) chartTimeline.destroy();
+      chartTimeline = new Chart(document.getElementById("chart-timeline"), {
+        type: "line",
+        data: {
+          labels: tl.map(function(d) { return d.day; }),
+          datasets: [{
+            label: "Games",
+            data: tl.map(function(d) { return d.games; }),
+            borderColor: "#4e79a7",
+            backgroundColor: "rgba(78, 121, 167, 0.1)",
+            fill: true,
+            tension: 0.3,
+          }],
+        },
+        options: {
+          responsive: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+        },
+      });
+    }
+  } catch {}
+}
+
 loadHistory();
 loadStats();
 loadLeaderboard();
+loadAnalytics();
