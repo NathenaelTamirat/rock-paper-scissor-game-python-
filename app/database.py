@@ -44,10 +44,17 @@ class Database:
                 user_id INTEGER PRIMARY KEY REFERENCES users(id),
                 wins INTEGER DEFAULT 0,
                 losses INTEGER DEFAULT 0,
-                draws INTEGER DEFAULT 0
+                draws INTEGER DEFAULT 0,
+                streak INTEGER DEFAULT 0
             );
         """)
         self.conn.commit()
+        # Migration: add streak column if missing on existing databases
+        try:
+            self.conn.execute("ALTER TABLE stats ADD COLUMN streak INTEGER DEFAULT 0")
+            self.conn.commit()
+        except sqlite3.OperationalError:
+            pass
 
     # --- Password hashing (PBKDF2-HMAC-SHA256, built-in) ---
 
@@ -146,11 +153,21 @@ class Database:
             "VALUES (?, ?, ?, ?)",
             (user_id, player_move, bot_move, winner),
         )
-        col = "wins" if winner == "player" else "losses" if winner == "bot" else "draws"
-        self.conn.execute(
-            f"UPDATE stats SET {col} = {col} + 1 WHERE user_id = ?",
-            (user_id,),
-        )
+        if winner == "player":
+            self.conn.execute(
+                "UPDATE stats SET wins = wins + 1, streak = streak + 1 "
+                "WHERE user_id = ?", (user_id,),
+            )
+        elif winner == "bot":
+            self.conn.execute(
+                "UPDATE stats SET losses = losses + 1, streak = 0 "
+                "WHERE user_id = ?", (user_id,),
+            )
+        else:
+            self.conn.execute(
+                "UPDATE stats SET draws = draws + 1, streak = 0 "
+                "WHERE user_id = ?", (user_id,),
+            )
         self.conn.commit()
 
     def get_user_rounds(self, user_id: int, limit: int = 10) -> list[dict]:
@@ -166,7 +183,7 @@ class Database:
 
     def get_user_stats(self, user_id: int) -> Optional[dict]:
         row = self.conn.execute(
-            "SELECT wins, losses, draws FROM stats WHERE user_id = ?",
+            "SELECT wins, losses, draws, streak FROM stats WHERE user_id = ?",
             (user_id,),
         ).fetchone()
         if row is None:
@@ -178,3 +195,20 @@ class Database:
             round(stats["wins"] / total, 4) if total > 0 else 0.0
         )
         return stats
+
+    def get_leaderboard(self, limit: int = 10) -> list[dict]:
+        rows = self.conn.execute("""
+            SELECT u.id, u.username,
+                   s.wins, s.losses, s.draws,
+                   (s.wins + s.losses + s.draws) AS total_rounds,
+                   CASE WHEN (s.wins + s.losses + s.draws) > 0
+                        THEN ROUND(CAST(s.wins AS REAL) /
+                             (s.wins + s.losses + s.draws), 4)
+                        ELSE 0.0 END AS win_rate,
+                   s.streak
+            FROM users u
+            JOIN stats s ON s.user_id = u.id
+            ORDER BY s.wins DESC, win_rate DESC, s.streak DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]

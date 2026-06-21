@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from typing import Optional
 
@@ -20,6 +21,8 @@ from app.schemas import (
 memory = GameMemory()
 db = Database()
 app = FastAPI(title="Rock Paper Scissors API")
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(
     CORSMiddleware,
@@ -160,6 +163,11 @@ def profile(user_id: int):
         stats=stats,
         recent_rounds=recent,
     )
+
+
+@app.get("/leaderboard")
+def leaderboard(limit: int = Query(default=10, ge=1, le=100)):
+    return {"leaderboard": db.get_leaderboard(limit=limit)}
 
 
 def main() -> None:

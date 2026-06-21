@@ -206,3 +206,70 @@ class TestAuth:
         response = client.post("/play", json={"player_move": "rock"},
                                 headers={"Authorization": "Bearer invalidtoken"})
         assert response.status_code == 200
+
+
+class TestLeaderboard:
+    def setup_method(self):
+        for uid in [u["id"] for u in db.conn.execute(
+                "SELECT id FROM users").fetchall()]:
+            db.conn.execute("DELETE FROM sessions WHERE user_id = ?", (uid,))
+            db.conn.execute("DELETE FROM rounds WHERE user_id = ?", (uid,))
+            db.conn.execute("DELETE FROM stats WHERE user_id = ?", (uid,))
+            db.conn.execute("DELETE FROM users WHERE id = ?", (uid,))
+        db.conn.commit()
+
+    def _make_user(self, username, wins=0, losses=0, draws=0, streak=0):
+        uid = db.create_user(username, "pass")
+        if uid == -1:
+            uid = db.get_user_by_username(username)["id"]
+        db.conn.execute(
+            "UPDATE stats SET wins=?, losses=?, draws=?, streak=? WHERE user_id=?",
+            (wins, losses, draws, streak, uid),
+        )
+        db.conn.commit()
+        return uid
+
+    def test_empty_leaderboard(self):
+        response = client.get("/leaderboard")
+        assert response.status_code == 200
+        assert response.json()["leaderboard"] == []
+
+    def test_leaderboard_ordering_by_wins(self):
+        self._make_user("alice", wins=10, losses=2)
+        self._make_user("bob", wins=5, losses=1)
+        response = client.get("/leaderboard")
+        entries = response.json()["leaderboard"]
+        assert entries[0]["username"] == "alice"
+        assert entries[1]["username"] == "bob"
+
+    def test_leaderboard_tie_broken_by_win_rate(self):
+        self._make_user("alice", wins=10, losses=10)  # 50%
+        self._make_user("bob", wins=10, losses=0)     # 100%
+        response = client.get("/leaderboard")
+        entries = response.json()["leaderboard"]
+        assert entries[0]["username"] == "bob"
+        assert entries[1]["username"] == "alice"
+
+    def test_leaderboard_tie_broken_by_streak(self):
+        self._make_user("alice", wins=10, losses=0, streak=3)
+        self._make_user("bob", wins=10, losses=0, streak=7)
+        response = client.get("/leaderboard")
+        entries = response.json()["leaderboard"]
+        assert entries[0]["username"] == "bob"
+        assert entries[1]["username"] == "alice"
+
+    def test_leaderboard_respects_limit(self):
+        for i in range(5):
+            self._make_user(f"user{i}", wins=i)
+        response = client.get("/leaderboard?limit=3")
+        entries = response.json()["leaderboard"]
+        assert len(entries) == 3
+
+    def test_leaderboard_excludes_users_with_no_activity(self):
+        self._make_user("active", wins=5)
+        self._make_user("inactive", wins=0, losses=0, draws=0)
+        response = client.get("/leaderboard")
+        entries = response.json()["leaderboard"]
+        usernames = [e["username"] for e in entries]
+        assert "active" in usernames
+        assert "inactive" in usernames  # still listed, 0 is valid

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rock Paper Scissors</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Rock Paper Scissors</h1>
+  </header>
+
+  <section id="auth-section" class="card">
+    <div id="auth-forms">
+      <div class="auth-form">
+        <h3>Register</h3>
+        <input type="text" id="reg-username" placeholder="Username">
+        <input type="password" id="reg-password" placeholder="Password">
+        <button onclick="register()">Register</button>
+      </div>
+      <div class="auth-form">
+        <h3>Login</h3>
+        <input type="text" id="login-username" placeholder="Username">
+        <input type="password" id="login-password" placeholder="Password">
+        <button onclick="login()">Login</button>
+      </div>
+    </div>
+    <div id="user-info" class="hidden">
+      <p>Logged in as: <strong id="display-username"></strong></p>
+      <button onclick="logout()">Logout</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Choose your move</h2>
+    <div class="moves">
+      <button class="move-btn" onclick="play('rock')">Rock</button>
+      <button class="move-btn" onclick="play('paper')">Paper</button>
+      <button class="move-btn" onclick="play('scissors')">Scissors</button>
+    </div>
+    <div id="loading" class="hidden">Bot is thinking...</div>
+  </section>
+
+  <section id="result-section" class="card hidden">
+    <h2>Result</h2>
+    <p id="result-text"></p>
+  </section>
+
+  <section id="score-section" class="card hidden">
+    <h2>Score</h2>
+    <div class="score-row">
+      <span class="score-item win">Wins: <strong id="score-wins">0</strong></span>
+      <span class="score-item loss">Losses: <strong id="score-losses">0</strong></span>
+      <span class="score-item draw">Draws: <strong id="score-draws">0</strong></span>
+    </div>
+  </section>
+
+  <section id="history-section" class="card hidden">
+    <h2>Recent Rounds</h2>
+    <ul id="history-list"></ul>
+  </section>
+
+  <section class="card">
+    <button onclick="resetGame()" class="reset-btn">Reset Game</button>
+  </section>
+
+  <section id="leaderboard-section" class="card hidden">
+    <h2>Leaderboard</h2>
+    <table id="leaderboard-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Player</th>
+          <th>Wins</th>
+          <th>Losses</th>
+          <th>Win Rate</th>
+          <th>Streak</th>
+        </tr>
+      </thead>
+      <tbody id="leaderboard-body"></tbody>
+    </table>
+  </section>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
