@@ -606,25 +606,6 @@ class Database:
         self.conn.commit()
         return self.get_tournament(code)
 
-    def _simulate_best_of_three(
-        self, player_a_id: int, player_b_id: int,
-    ) -> tuple:
-        import random
-        from app.rules import MOVES, get_winner
-        score_a, score_b = 0, 0
-        for _ in range(3):
-            if score_a == 2 or score_b == 2:
-                break
-            move_a = random.choice(MOVES)
-            move_b = random.choice(MOVES)
-            result = get_winner(move_a, move_b)
-            if result == "player":
-                score_a += 1
-            elif result == "bot":
-                score_b += 1
-        winner_id = player_a_id if score_a > score_b else player_b_id
-        return score_a, score_b, winner_id
-
     def run_tournament(self, code: str) -> dict:
         t = self.get_tournament(code)
         if t is None:
@@ -644,42 +625,21 @@ class Database:
         )
         self.conn.commit()
 
-        seeded = sorted(players, key=lambda p: p["seed"])
+        from app.tournament import run_bracket
+        matches = run_bracket(players)
 
-        # Semifinals: seed 1 vs seed 4, seed 2 vs seed 3
-        semis = [
-            (seeded[0], seeded[3]),
-            (seeded[1], seeded[2]),
-        ]
-
-        finalists = []
-        for idx, (p_a, p_b) in enumerate(semis):
-            score_a, score_b, winner_id = self._simulate_best_of_three(
-                p_a["user_id"], p_b["user_id"],
-            )
+        for m in matches:
             self.conn.execute(
                 "INSERT INTO tournament_matches "
                 "(tournament_id, round, match_index, player_a_id, player_b_id, "
                 " score_a, score_b, winner_id, status) "
-                "VALUES (?, 1, ?, ?, ?, ?, ?, ?, 'complete')",
-                (t["id"], idx, p_a["user_id"], p_b["user_id"],
-                 score_a, score_b, winner_id),
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'complete')",
+                (t["id"], m["round"], m["match_index"],
+                 m["player_a_id"], m["player_b_id"],
+                 m["score_a"], m["score_b"], m["winner_id"]),
             )
-            finalists.append(winner_id)
 
-        # Final
-        score_a, score_b, champion_id = self._simulate_best_of_three(
-            finalists[0], finalists[1],
-        )
-        self.conn.execute(
-            "INSERT INTO tournament_matches "
-            "(tournament_id, round, match_index, player_a_id, player_b_id, "
-            " score_a, score_b, winner_id, status) "
-            "VALUES (?, 2, 0, ?, ?, ?, ?, ?, 'complete')",
-            (t["id"], finalists[0], finalists[1],
-             score_a, score_b, champion_id),
-        )
-
+        champion_id = matches[-1]["winner_id"]
         self.conn.execute(
             "UPDATE tournaments SET status = 'complete', winner_id = ? WHERE id = ?",
             (champion_id, t["id"]),

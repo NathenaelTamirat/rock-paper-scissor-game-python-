@@ -1,15 +1,7 @@
-import random
-
-from app.rules import MOVES
-
-_COUNTER = {
-    "rock": "paper",
-    "paper": "scissors",
-    "scissors": "rock",
-}
+from app.rules import COUNTER, random_move
 
 def random_bot_move() -> str:
-    return random.choice(MOVES)
+    return random_move()
 
 
 def adaptive_bot_move(memory) -> str:
@@ -25,7 +17,7 @@ def _aggressive_move(memory) -> str:
     predicted = memory.predict_player_next_move()
     if predicted is None:
         return random_bot_move()
-    return _COUNTER[predicted]
+    return COUNTER[predicted]
 
 
 def _defensive_move(memory) -> str:
@@ -33,7 +25,7 @@ def _defensive_move(memory) -> str:
         return random_bot_move()
     last = memory.all_rounds[-1]
     if last["winner"] == "player":
-        return _COUNTER[last["player_move"]]
+        return COUNTER[last["player_move"]]
     if last["winner"] == "bot":
         return last["bot_move"]
     return random_bot_move()

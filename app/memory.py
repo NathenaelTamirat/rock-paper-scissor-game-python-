@@ -3,17 +3,12 @@ from collections import deque
 from typing import Optional
 
 from app.rules import (
+    COUNTER,
     MOVES,
     WINNER_BOT,
     WINNER_DRAW,
     WINNER_PLAYER,
 )
-
-_COUNTER = {
-    "rock": "paper",
-    "paper": "scissors",
-    "scissors": "rock",
-}
 
 MIN_HISTORY_FOR_ADAPTIVE = 3
 
@@ -97,4 +92,4 @@ class GameMemory:
         predicted = self.predict_player_next_move()
         if predicted is None:
             return None
-        return _COUNTER[predicted]
+        return COUNTER[predicted]
