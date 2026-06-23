@@ -218,7 +218,7 @@ class TestAuth:
         login = self._login()
         token = login.json()["token"]
         client.post("/play", json={"player_move": "rock"},
-                     headers={"Authorization": f"Bearer {token}"})
+                    headers={"Authorization": f"Bearer {token}"})
 
         response = client.get(f"/profile/{user_id}")
         assert response.status_code == 200
@@ -241,7 +241,7 @@ class TestAuth:
 
         for _ in range(3):
             client.post("/play", json={"player_move": "rock"},
-                         headers={"Authorization": f"Bearer {token}"})
+                        headers={"Authorization": f"Bearer {token}"})
 
         user_id = login.json()["user_id"]
         rounds = db.get_user_rounds(user_id)
@@ -250,7 +250,7 @@ class TestAuth:
     def test_play_with_invalid_token_ignored(self):
         self._register()
         response = client.post("/play", json={"player_move": "rock"},
-                                headers={"Authorization": "Bearer invalidtoken"})
+                               headers={"Authorization": "Bearer invalidtoken"})
         assert response.status_code == 200
 
 
@@ -614,7 +614,7 @@ class TestMatchmaking:
         assert response.status_code == 401
 
     def test_join_queue(self):
-        user = self._register(self.USER_A)
+        self._register(self.USER_A)
         token = self._login(self.USER_A)["token"]
         response = client.post("/matchmaking/join", json={},
                                headers=self._auth_header(token))
@@ -624,7 +624,7 @@ class TestMatchmaking:
         assert data["position"] == 1
 
     def test_leave_queue(self):
-        user = self._register(self.USER_A)
+        self._register(self.USER_A)
         token = self._login(self.USER_A)["token"]
         client.post("/matchmaking/join", json={},
                     headers=self._auth_header(token))
@@ -686,7 +686,7 @@ class TestMatchmaking:
         assert room["player_b_id"] == uid_a or room["player_b_id"] == uid_b
 
     def test_join_twice_returns_searching(self):
-        user = self._register(self.USER_A)
+        self._register(self.USER_A)
         token = self._login(self.USER_A)["token"]
         r1 = client.post("/matchmaking/join", json={},
                          headers=self._auth_header(token))
@@ -697,11 +697,10 @@ class TestMatchmaking:
 
     def test_pairing_removes_from_queue(self):
         user_a = self._register(self.USER_A)
-        user_b = self._register(self.USER_B)
+        self._register(self.USER_B)
         token_a = self._login(self.USER_A)["token"]
         token_b = self._login(self.USER_B)["token"]
         uid_a = user_a["user_id"]
-        uid_b = user_b["user_id"]
 
         client.post("/matchmaking/join", json={},
                     headers=self._auth_header(token_a))
@@ -1017,7 +1016,7 @@ class TestHousekeeping:
     def test_tournament_listing(self):
         # Create a tourney
         client.post("/tournaments", json={"name": "ListTest", "max_players": 4},
-                     headers=self._auth_header())
+                    headers=self._auth_header())
         resp = client.get("/tournaments")
         assert resp.status_code == 200
         data = resp.json()
