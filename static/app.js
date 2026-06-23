@@ -1,5 +1,11 @@
 var API = typeof API_BASE_URL !== "undefined" ? API_BASE_URL : "";
 
+function escapeHtml(str) {
+  var div = document.createElement("div");
+  div.appendChild(document.createTextNode(str));
+  return div.innerHTML;
+}
+
 let authToken = localStorage.getItem("rps_token") || "";
 let authUser = localStorage.getItem("rps_user") || "";
 let authUserId = parseInt(localStorage.getItem("rps_user_id") || "0", 10);
@@ -224,11 +230,30 @@ async function api(method, path, body) {
     opts.body = JSON.stringify(body);
   }
   const res = await fetch(API + path, opts);
-  const data = await res.json();
+  let data;
+  try { data = await res.json(); } catch { data = null; }
   if (!res.ok) {
-    throw new Error(data.detail || "Request failed");
+    throw new Error((data && data.detail) || "Request failed (" + res.status + ")");
   }
   return data;
+}
+
+function showError(msg) {
+  var el = document.getElementById("error-text");
+  if (!el) return;
+  el.textContent = msg;
+  el.className = "error-msg visible";
+  clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(function() { el.className = "error-msg"; }, 5000);
+}
+
+function showSuccess(msg) {
+  var el = document.getElementById("error-text");
+  if (!el) return;
+  el.textContent = msg;
+  el.className = "success-msg visible";
+  clearTimeout(el._hideTimer);
+  el._hideTimer = setTimeout(function() { el.className = "success-msg"; }, 5000);
 }
 
 async function play(move) {
@@ -260,7 +285,7 @@ async function play(move) {
     loadLeaderboard();
     loadAnalytics();
   } catch (err) {
-    alert("Error: " + err.message);
+    showError(err.message);
   } finally {
     document.getElementById("loading").classList.add("hidden");
   }
@@ -285,13 +310,16 @@ async function loadHistory() {
     const data = await api("GET", "/history");
     const list = document.getElementById("history-list");
     const rounds = data.latest_10 || [];
-    if (rounds.length === 0) return;
 
     document.getElementById("history-section").classList.remove("hidden");
+    if (rounds.length === 0) {
+      list.innerHTML = "<li class='empty-msg'>No rounds played yet.</li>";
+      return;
+    }
     list.innerHTML = rounds
       .map((r) => {
         const w = r.winner === "player" ? "Win" : r.winner === "bot" ? "Loss" : "Draw";
-        return `<li>${r.player_move} vs ${r.bot_move} — <strong>${w}</strong></li>`;
+        return "<li>" + escapeHtml(r.player_move) + " vs " + escapeHtml(r.bot_move) + " — <strong>" + w + "</strong></li>";
       })
       .join("");
   } catch {
@@ -303,16 +331,19 @@ async function loadLeaderboard() {
   try {
     const data = await api("GET", "/leaderboard?limit=10");
     const entries = data.leaderboard || [];
-    if (entries.length === 0) return;
 
     document.getElementById("leaderboard-section").classList.remove("hidden");
     const tbody = document.getElementById("leaderboard-body");
+    if (entries.length === 0) {
+      tbody.innerHTML = "<tr><td colspan='6' class='empty-msg'>No leaderboard data yet.</td></tr>";
+      return;
+    }
     tbody.innerHTML = entries
       .map(
         (e, i) =>
-          `<tr><td>${i + 1}</td><td>${e.username}</td><td>${e.wins}</td>` +
-          `<td>${e.losses}</td><td>${(e.win_rate * 100).toFixed(1)}%</td>` +
-          `<td>${e.streak}</td></tr>`
+          "<tr><td>" + (i + 1) + "</td><td>" + escapeHtml(e.username) + "</td><td>" + e.wins + "</td>" +
+          "<td>" + e.losses + "</td><td>" + (e.win_rate * 100).toFixed(1) + "%</td>" +
+          "<td>" + e.streak + "</td></tr>"
       )
       .join("");
   } catch {
@@ -323,22 +354,22 @@ async function loadLeaderboard() {
 async function register() {
   const username = document.getElementById("reg-username").value.trim();
   const password = document.getElementById("reg-password").value;
-  if (!username || !password) return alert("Fill in both fields.");
+  if (!username || !password) return showError("Fill in both fields.");
 
   try {
     await api("POST", "/register", { username, password });
-    alert("Registered! You can now log in.");
+    showSuccess("Registered! You can now log in.");
     document.getElementById("reg-username").value = "";
     document.getElementById("reg-password").value = "";
   } catch (err) {
-    alert("Registration failed: " + err.message);
+    showError("Registration: " + err.message);
   }
 }
 
 async function login() {
   const username = document.getElementById("login-username").value.trim();
   const password = document.getElementById("login-password").value;
-  if (!username || !password) return alert("Fill in both fields.");
+  if (!username || !password) return showError("Fill in both fields.");
 
   try {
     const data = await api("POST", "/login", { username, password });
@@ -357,7 +388,7 @@ async function login() {
     document.getElementById("login-password").value = "";
     loadAnalytics();
   } catch (err) {
-    alert("Login failed: " + err.message);
+    showError("Login: " + err.message);
   }
 }
 
@@ -389,7 +420,7 @@ async function resetGame() {
     document.getElementById("score-draws").textContent = "0";
     document.getElementById("history-list").innerHTML = "";
   } catch (err) {
-    alert("Reset failed: " + err.message);
+    showError(err.message);
   }
 }
 
@@ -476,12 +507,12 @@ function renderTournament(data) {
   if (data.matches && data.matches.length > 0) {
     bracketEl.classList.remove("hidden");
     matchesEl.innerHTML = data.matches.map(function(m) {
-      var pA = m.player_a_username || "TBD";
-      var pB = m.player_b_username || "TBD";
+      var pA = escapeHtml(m.player_a_username || "TBD");
+      var pB = escapeHtml(m.player_b_username || "TBD");
       var score = m.status === "complete"
         ? "[" + m.score_a + " - " + m.score_b + "]"
         : "";
-      var w = m.winner_username ? " Winner: " + m.winner_username : "";
+      var w = m.winner_username ? " Winner: " + escapeHtml(m.winner_username) : "";
       var r = m.round === 1 ? "Semifinal" : "Final";
       return "<div class='match-card'>" +
         "<strong>" + r + " " + (m.match_index + 1) + "</strong>: " +
@@ -491,7 +522,7 @@ function renderTournament(data) {
 
     if (data.winner_username) {
       winnerEl.classList.remove("hidden");
-      winnerEl.innerHTML = "<strong>Champion: " + data.winner_username + "</strong>";
+      winnerEl.innerHTML = "<strong>Champion: " + escapeHtml(data.winner_username) + "</strong>";
     }
   }
 }
@@ -508,8 +539,8 @@ async function loadTournamentList() {
     }
     el.classList.remove("hidden");
     items.innerHTML = list.map(function(t) {
-      return "<li><a href='#' onclick='event.preventDefault();joinByCode(\"" + t.code + "\")'>" +
-        t.name + " (" + t.player_count + "/" + t.max_players + ")" +
+      return "<li><a href='#' onclick='event.preventDefault();joinByCode(\"" + escapeHtml(t.code) + "\")'>" +
+        escapeHtml(t.name) + " (" + t.player_count + "/" + t.max_players + ")" +
         "</a></li>";
     }).join("");
   } catch {
