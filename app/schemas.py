@@ -8,6 +8,26 @@ class PlayRequest(BaseModel):
     persona: str = "classic"
 
 
+class StatsResponse(BaseModel):
+    total_rounds: int
+    wins: int
+    losses: int
+    draws: int
+    win_rate: float
+    favorite_move: Optional[str] = None
+    streak: int
+
+
+class HistoryResponse(BaseModel):
+    all_rounds: list
+    latest_10: list
+    stats: StatsResponse
+
+
+class ResetResponse(BaseModel):
+    status: str
+
+
 class PlayResponse(BaseModel):
     player_move: str
     bot_move: str

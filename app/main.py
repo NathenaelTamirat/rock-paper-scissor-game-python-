@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 
 from typing import Optional
 
-from app.bot import persona_bot_move
+from app.bot import PERSONA_STRATEGIES, persona_bot_move
 from app.database import Database
 from app.memory import GameMemory
 from app.rules import MOVES, get_winner, validate_move
@@ -14,6 +14,7 @@ from app.schemas import (
     AnalyticsSummaryResponse,
     AnalyticsTimelineResponse,
     CreateRoomResponse,
+    HistoryResponse,
     JoinRoomResponse,
     LoginRequest,
     LoginResponse,
@@ -26,9 +27,11 @@ from app.schemas import (
     ProfileResponse,
     RegisterRequest,
     RegisterResponse,
+    ResetResponse,
     RoomPlayRequest,
     RoomPlayResponse,
     RoomStateResponse,
+    StatsResponse,
     TournamentCreateRequest,
     TournamentCreateResponse,
     TournamentJoinResponse,
@@ -87,6 +90,12 @@ def play(
     req: PlayRequest,
     authorization: str = Header(default=""),
 ):
+    if req.persona not in PERSONA_STRATEGIES:
+        valid = ", ".join(PERSONA_STRATEGIES)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid persona '{req.persona}'. Choose from: {valid}.",
+        )
     result = play_round(req.player_move, persona=req.persona)
 
     if "error" in result:
@@ -119,19 +128,19 @@ def play(
     )
 
 
-@app.get("/history")
+@app.get("/history", response_model=HistoryResponse)
 def history():
-    return {
-        "all_rounds": memory.all_rounds,
-        "latest_10": list(memory.last_10_rounds),
-        "stats": memory.get_stats(),
-    }
+    return HistoryResponse(
+        all_rounds=list(memory.all_rounds),
+        latest_10=list(memory.last_10_rounds),
+        stats=StatsResponse(**memory.get_stats()),
+    )
 
 
-@app.post("/reset")
+@app.post("/reset", response_model=ResetResponse)
 def reset():
     memory.reset()
-    return {"status": "ok"}
+    return ResetResponse(status="ok")
 
 
 @app.post("/register", response_model=RegisterResponse)

@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 os.environ["RPS_DB_PATH"] = tempfile.mktemp(suffix=".db")  # noqa: E402
 
 from app.main import app, memory, db  # noqa: E402
+from app.bot import PERSONA_STRATEGIES  # noqa: E402
 
 client = TestClient(app)
 
@@ -54,6 +55,25 @@ class TestPlay:
         score = data["score"]
         assert score["wins"] + score["losses"] + score["draws"] == 6
 
+    def test_invalid_persona_returns_400(self):
+        response = client.post("/play", json={
+            "player_move": "rock", "persona": "alien",
+        })
+        assert response.status_code == 400
+        assert "Invalid persona" in response.text
+
+    def test_valid_personas_accepted(self):
+        for persona in PERSONA_STRATEGIES:
+            memory.reset()
+            response = client.post("/play", json={
+                "player_move": "rock", "persona": persona,
+            })
+            assert response.status_code == 200
+
+    def test_default_persona_when_omitted(self):
+        response = client.post("/play", json={"player_move": "rock"})
+        assert response.status_code == 200
+
 
 class TestHistory:
     def setup_method(self):
@@ -83,6 +103,32 @@ class TestHistory:
         data = response.json()
         assert len(data["all_rounds"]) == 15
         assert len(data["latest_10"]) == 10
+
+    def test_history_stats_schema(self):
+        memory.reset()
+        client.post("/play", json={"player_move": "rock"})
+        response = client.get("/history")
+        data = response.json()
+        stats = data["stats"]
+        assert "total_rounds" in stats
+        assert "wins" in stats
+        assert "losses" in stats
+        assert "draws" in stats
+        assert "win_rate" in stats
+        assert "favorite_move" in stats
+        assert "streak" in stats
+        assert isinstance(stats["total_rounds"], int)
+        assert isinstance(stats["win_rate"], (int, float))
+
+    def test_history_stats_empty(self):
+        memory.reset()
+        response = client.get("/history")
+        data = response.json()
+        stats = data["stats"]
+        assert stats["total_rounds"] == 0
+        assert stats["favorite_move"] is None
+        assert stats["win_rate"] == 0.0
+        assert stats["streak"] == 0
 
 
 class TestReset:
