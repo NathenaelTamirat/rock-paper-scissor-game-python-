@@ -1,5 +1,6 @@
 from app.rules import COUNTER, random_move
 
+
 def random_bot_move() -> str:
     return random_move()
 

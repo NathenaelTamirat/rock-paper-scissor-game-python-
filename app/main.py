@@ -32,7 +32,6 @@ from app.schemas import (
     TournamentCreateRequest,
     TournamentCreateResponse,
     TournamentJoinResponse,
-    TournamentListItem,
     TournamentStateResponse,
 )
 
@@ -300,7 +299,6 @@ def room_play(
         raise HTTPException(status_code=400, detail=str(e))
 
     is_a = room["player_a_id"] == user_id
-    is_b = room["player_b_id"] == user_id
     your_move = room["move_a"] if is_a else room["move_b"]
     opponent_move = None
     winner = None

@@ -1,5 +1,5 @@
 const { app, BrowserWindow } = require("electron");
-const { spawn } = require("child_process");
+const { spawn, execSync } = require("child_process");
 const path = require("path");
 const http = require("http");
 
@@ -13,7 +13,7 @@ function findPython() {
   const candidates = ["python3", "python"];
   for (const cmd of candidates) {
     try {
-      require("child_process").execSync(cmd + " --version", { stdio: "ignore" });
+      execSync(cmd + " --version", { stdio: "ignore" });
       return cmd;
     } catch {
       continue;

@@ -1,7 +1,4 @@
-import random
-from typing import Optional
-
-from app.rules import COUNTER, MOVES, random_move, get_counter_move
+from app.rules import random_move
 
 MIN_PLAYERS = 4
 ROUND_NAMES = {1: "Semifinal", 2: "Final"}

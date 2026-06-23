@@ -3,9 +3,9 @@ import tempfile
 
 from fastapi.testclient import TestClient
 
-os.environ["RPS_DB_PATH"] = tempfile.mktemp(suffix=".db")
+os.environ["RPS_DB_PATH"] = tempfile.mktemp(suffix=".db")  # noqa: E402
 
-from app.main import app, memory, db
+from app.main import app, memory, db  # noqa: E402
 
 client = TestClient(app)
 
@@ -331,14 +331,14 @@ class TestMultiplayer:
         assert data["status"] == "waiting"
 
     def test_join_nonexistent_room(self):
-        user = self._register(self.USER_A)
+        self._register(self.USER_A)
         token = self._login(self.USER_A)["token"]
         response = client.post("/rooms/NONE01/join",
                                headers=self._auth_header(token))
         assert response.status_code == 404
 
     def test_join_own_room(self):
-        user = self._register(self.USER_A)
+        self._register(self.USER_A)
         token = self._login(self.USER_A)["token"]
         create = client.post("/rooms", headers=self._auth_header(token))
         code = create.json()["room_code"]
@@ -348,7 +348,7 @@ class TestMultiplayer:
         assert "own room" in response.text
 
     def test_join_room_success(self):
-        user_a = self._register(self.USER_A)
+        self._register(self.USER_A)
         user_b = self._register(self.USER_B)
         token_a = self._login(self.USER_A)["token"]
         token_b = self._login(self.USER_B)["token"]
@@ -365,8 +365,8 @@ class TestMultiplayer:
         assert data["status"] == "playing"
 
     def test_join_full_room(self):
-        user_a = self._register(self.USER_A)
-        user_b = self._register(self.USER_B)
+        self._register(self.USER_A)
+        self._register(self.USER_B)
         token_a = self._login(self.USER_A)["token"]
         token_b = self._login(self.USER_B)["token"]
 
@@ -388,7 +388,7 @@ class TestMultiplayer:
         assert response.status_code == 401
 
     def test_play_invalid_move(self):
-        user_a = self._register(self.USER_A)
+        self._register(self.USER_A)
         token_a = self._login(self.USER_A)["token"]
         create = client.post("/rooms", headers=self._auth_header(token_a))
         code = create.json()["room_code"]
@@ -398,14 +398,13 @@ class TestMultiplayer:
         assert response.status_code == 400
 
     def test_play_not_in_room(self):
-        user_a = self._register(self.USER_A)
-        user_b = self._register(self.USER_B)
+        self._register(self.USER_A)
+        self._register(self.USER_B)
         token_a = self._login(self.USER_A)["token"]
         token_b = self._login(self.USER_B)["token"]
         create = client.post("/rooms", headers=self._auth_header(token_a))
         code = create.json()["room_code"]
 
-        # user_b tries to play without joining (room is still "waiting")
         response = client.post(f"/rooms/{code}/play",
                                json={"move": "rock"},
                                headers=self._auth_header(token_b))
@@ -413,8 +412,8 @@ class TestMultiplayer:
         assert "in progress" in response.text.lower()
 
     def test_submit_moves_get_winner(self):
-        user_a = self._register(self.USER_A)
-        user_b = self._register(self.USER_B)
+        self._register(self.USER_A)
+        self._register(self.USER_B)
         token_a = self._login(self.USER_A)["token"]
         token_b = self._login(self.USER_B)["token"]
 
@@ -424,7 +423,6 @@ class TestMultiplayer:
         client.post(f"/rooms/{code}/join",
                     headers=self._auth_header(token_b))
 
-        # Player A submits
         r1 = client.post(f"/rooms/{code}/play",
                          json={"move": "rock"},
                          headers=self._auth_header(token_a))
@@ -435,7 +433,6 @@ class TestMultiplayer:
         assert d1["opponent_move"] is None
         assert d1["winner"] is None
 
-        # Player B submits
         r2 = client.post(f"/rooms/{code}/play",
                          json={"move": "scissors"},
                          headers=self._auth_header(token_b))
@@ -447,8 +444,8 @@ class TestMultiplayer:
         assert d2["winner"] == "player_a"
 
     def test_double_submit_rejected(self):
-        user_a = self._register(self.USER_A)
-        user_b = self._register(self.USER_B)
+        self._register(self.USER_A)
+        self._register(self.USER_B)
         token_a = self._login(self.USER_A)["token"]
         token_b = self._login(self.USER_B)["token"]
 
@@ -469,8 +466,8 @@ class TestMultiplayer:
         assert "already submitted" in response.text.lower()
 
     def test_room_state_endpoint(self):
-        user_a = self._register(self.USER_A)
-        user_b = self._register(self.USER_B)
+        self._register(self.USER_A)
+        self._register(self.USER_B)
         token_a = self._login(self.USER_A)["token"]
         token_b = self._login(self.USER_B)["token"]
 
@@ -480,7 +477,6 @@ class TestMultiplayer:
         client.post(f"/rooms/{code}/join",
                     headers=self._auth_header(token_b))
 
-        # State before moves
         state = client.get(f"/rooms/{code}")
         assert state.status_code == 200
         s = state.json()
@@ -489,7 +485,6 @@ class TestMultiplayer:
         assert s["move_b_submitted"] is False
         assert s["winner"] is None
 
-        # Player A submits
         client.post(f"/rooms/{code}/play",
                     json={"move": "rock"},
                     headers=self._auth_header(token_a))
@@ -500,7 +495,6 @@ class TestMultiplayer:
         assert s["move_b_submitted"] is False
         assert s["winner"] is None
 
-        # Player B submits
         client.post(f"/rooms/{code}/play",
                     json={"move": "paper"},
                     headers=self._auth_header(token_b))
@@ -517,8 +511,7 @@ class TestMultiplayer:
         assert response.status_code == 404
 
     def test_room_state_without_auth(self):
-        """GET /rooms/{code} should work without auth."""
-        user_a = self._register(self.USER_A)
+        self._register(self.USER_A)
         token_a = self._login(self.USER_A)["token"]
         create = client.post("/rooms", headers=self._auth_header(token_a))
         code = create.json()["room_code"]

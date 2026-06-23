@@ -301,7 +301,6 @@ class Database:
     def get_analytics_timeline(
         self, user_id: int, days: int = 7,
     ) -> list[dict]:
-        from datetime import datetime, timedelta
         rows = self.conn.execute("""
             SELECT DATE(played_at) AS day,
                    COUNT(*) AS games,
@@ -329,7 +328,7 @@ class Database:
         for _ in range(10):
             code = self._generate_room_code()
             try:
-                cur = self.conn.execute(
+                self.conn.execute(
                     "INSERT INTO rooms (room_code, player_a_id, status) "
                     "VALUES (?, ?, 'waiting')",
                     (code, user_id),

@@ -28,6 +28,11 @@ class GameMemory:
     def record_round(
         self, player_move: str, bot_move: str, winner: str
     ) -> None:
+        if player_move not in MOVES or bot_move not in MOVES:
+            raise ValueError(f"Invalid move: {player_move}, {bot_move}")
+        if winner not in (WINNER_PLAYER, WINNER_BOT, WINNER_DRAW):
+            raise ValueError(f"Invalid winner: {winner}")
+
         self.total_rounds += 1
         self.player_move_counts[player_move] += 1
         self.bot_move_counts[bot_move] += 1
@@ -55,6 +60,9 @@ class GameMemory:
             return None
 
         max_count = max(self.player_move_counts.values())
+        if max_count == 0:
+            return None
+
         tied_moves = [
             m for m, c in self.player_move_counts.items() if c == max_count
         ]
@@ -65,7 +73,7 @@ class GameMemory:
         if self.total_rounds > 0:
             win_rate = round(self.wins / self.total_rounds, 4)
 
-        favorite_move = "none"
+        favorite_move = None
         if self.total_rounds > 0:
             max_count = max(self.player_move_counts.values())
             tied = [m for m, c in self.player_move_counts.items()
@@ -83,7 +91,15 @@ class GameMemory:
         }
 
     def reset(self) -> None:
-        self.__init__()
+        self.total_rounds = 0
+        self.wins = 0
+        self.losses = 0
+        self.draws = 0
+        self.player_move_counts = {m: 0 for m in MOVES}
+        self.bot_move_counts = {m: 0 for m in MOVES}
+        self.player_streak = 0
+        self.all_rounds = []
+        self.last_10_rounds = deque(maxlen=10)
 
     def get_adaptive_move(self) -> Optional[str]:
         if self.total_rounds < MIN_HISTORY_FOR_ADAPTIVE:
